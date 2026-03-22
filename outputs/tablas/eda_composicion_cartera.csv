@@ -1,0 +1,15 @@
+Variable,Categoría,Porcentaje (%)
+Propósito del Préstamo (loan_purpose),P,60.52
+Propósito del Préstamo (loan_purpose),N,20.02
+Propósito del Préstamo (loan_purpose),C,19.46
+Tipo de Propiedad (property_type),SF,62.15
+Tipo de Propiedad (property_type),PU,28.48
+Tipo de Propiedad (property_type),CO,8.52
+Tipo de Propiedad (property_type),MH,0.67
+Tipo de Propiedad (property_type),CP,0.17
+Estado de Ocupación (occupancy_status),P,89.33
+Estado de Ocupación (occupancy_status),I,7.49
+Estado de Ocupación (occupancy_status),S,3.18
+Canal de Originación (channel),R,54.5
+Canal de Originación (channel),C,32.81
+Canal de Originación (channel),B,12.69
