@@ -175,122 +175,161 @@ def salto_pagina(doc):
 # EJECUCIÓN DEL PIPELINE
 # ============================================================================
 
+def _run_safe(nombre, fn):
+    """Ejecuta fn() capturando excepciones sin abortar el pipeline."""
+    try:
+        return fn()
+    except Exception:
+        print(f"  ERROR {nombre}:\n{traceback.format_exc()}")
+        return None
+
+
+def _stats_panel(parquet_path, cols):
+    """Lee solo las columnas pedidas de un parquet grande."""
+    import pyarrow.parquet as pq
+    schema_names = pq.read_schema(parquet_path).names
+    cols_ok = [c for c in cols if c in schema_names]
+    return pd.read_parquet(parquet_path, columns=cols_ok)
+
+
 def ejecutar_pipeline():
-    """Ejecuta todos los pasos y retorna los resultados."""
+    """
+    Ejecuta todos los pasos del pipeline.
+    IMPORTANTE: nunca almacena DataFrames grandes en 'resultados' —
+    solo extrae estadísticas pequeñas para el docx y libera memoria (gc).
+    """
+    import gc
+    import importlib
     resultados = {}
 
-    # --- Paso 0: EDA ---
+    # ------------------------------------------------------------------
+    # Paso 0: EDA
+    # ------------------------------------------------------------------
     print("\n[PIPELINE] Paso 0: EDA...")
-    try:
-        import importlib
-        eda = importlib.import_module("00_eda")
-        resultados["eda"] = eda.main()
-    except Exception:
-        print(f"  ERROR en EDA: {traceback.format_exc()}")
-        resultados["eda"] = {}
+    resultados["eda"] = _run_safe("EDA", importlib.import_module("00_eda").main) or {}
 
-    # --- Paso 1: Carga ---
+    # ------------------------------------------------------------------
+    # Paso 1: Carga — solo aseguramos que panel.parquet exista,
+    #         luego extraemos estadísticas mínimas (2 cols)
+    # ------------------------------------------------------------------
     print("[PIPELINE] Paso 1: Carga de datos...")
-    try:
-        import importlib
-        p01 = importlib.import_module("01_carga_datos")
-        if not (DATA_PATH / "panel.parquet").exists():
-            resultados["panel"] = p01.main()
-        else:
-            resultados["panel"] = pd.read_parquet(DATA_PATH / "panel.parquet")
-            print("  Panel cargado desde caché.")
-    except Exception:
-        print(f"  ERROR Paso 1: {traceback.format_exc()}")
-        resultados["panel"] = None
+    p1_path = DATA_PATH / "panel.parquet"
+    if not p1_path.exists():
+        _run_safe("Paso 1", importlib.import_module("01_carga_datos").main)
+    else:
+        print("  panel.parquet existe (caché).")
 
-    # --- Paso 2: Default ---
+    if p1_path.exists():
+        try:
+            tmp = _stats_panel(p1_path, ["loan_sequence_number", "monthly_reporting_period", "vintage_year"])
+            resultados["panel_stats"] = {
+                "n_obs":   len(tmp),
+                "n_loans": tmp["loan_sequence_number"].nunique(),
+                "per_min": tmp["monthly_reporting_period"].min() if "monthly_reporting_period" in tmp else None,
+                "per_max": tmp["monthly_reporting_period"].max() if "monthly_reporting_period" in tmp else None,
+            }
+            del tmp; gc.collect()
+            print(f"  Stats panel: {resultados['panel_stats']['n_obs']:,} obs, "
+                  f"{resultados['panel_stats']['n_loans']:,} préstamos")
+        except Exception:
+            print(f"  No se pudieron leer stats del panel: {traceback.format_exc()}")
+            resultados["panel_stats"] = {}
+
+    # ------------------------------------------------------------------
+    # Paso 2: Default — aseguramos parquet, luego stats de 2 cols
+    # ------------------------------------------------------------------
     print("[PIPELINE] Paso 2: Definición de default...")
-    try:
-        import importlib
-        p02 = importlib.import_module("02_definicion_default")
-        if not (DATA_PATH / "panel_con_default.parquet").exists():
-            resultados["panel_def"] = p02.main()
-        else:
-            resultados["panel_def"] = pd.read_parquet(DATA_PATH / "panel_con_default.parquet")
-            print("  panel_con_default cargado desde caché.")
-    except Exception:
-        print(f"  ERROR Paso 2: {traceback.format_exc()}")
-        resultados["panel_def"] = None
+    p2_path = DATA_PATH / "panel_con_default.parquet"
+    if not p2_path.exists():
+        _run_safe("Paso 2", importlib.import_module("02_definicion_default").main)
+    else:
+        print("  panel_con_default.parquet existe (caché).")
 
-    # --- Paso 3: Feature Engineering ---
+    if p2_path.exists():
+        try:
+            tmp = _stats_panel(p2_path, ["ifrs9_stage", "default_12m"])
+            dist = tmp["ifrs9_stage"].value_counts().sort_index()
+            tasa = tmp.loc[tmp["ifrs9_stage"].isin([1, 2]), "default_12m"].mean()
+            resultados["panel_def"] = {  # solo stats, no el DF completo
+                "dist_stage": dist,
+                "tasa_12m":   tasa,
+                "n_total":    len(tmp),
+            }
+            del tmp; gc.collect()
+        except Exception:
+            print(f"  No se pudieron leer stats de panel_def: {traceback.format_exc()}")
+            resultados["panel_def"] = None
+
+    # ------------------------------------------------------------------
+    # Paso 3: Feature Engineering
+    # ------------------------------------------------------------------
     print("[PIPELINE] Paso 3: Feature Engineering...")
-    try:
-        import importlib
-        p03 = importlib.import_module("03_feature_engineering")
-        if not (DATA_PATH / "dataset_modelado.parquet").exists():
-            resultados["dataset_mod"] = p03.main()
-        else:
-            resultados["dataset_mod"] = pd.read_parquet(DATA_PATH / "dataset_modelado.parquet")
-            print("  dataset_modelado cargado desde caché.")
-    except Exception:
-        print(f"  ERROR Paso 3: {traceback.format_exc()}")
-        resultados["dataset_mod"] = None
+    p3_path = DATA_PATH / "dataset_modelado.parquet"
+    if not p3_path.exists():
+        _run_safe("Paso 3", importlib.import_module("03_feature_engineering").main)
+    else:
+        print("  dataset_modelado.parquet existe (caché).")
 
-    # --- Paso 4: Modelado ---
+    if p3_path.exists():
+        try:
+            tmp = _stats_panel(p3_path, ["default_12m", "vintage_year"])
+            resultados["dataset_mod"] = {
+                "n_obs":    len(tmp),
+                "tasa_12m": tmp["default_12m"].mean() if "default_12m" in tmp else None,
+            }
+            del tmp; gc.collect()
+        except Exception:
+            resultados["dataset_mod"] = None
+
+    # ------------------------------------------------------------------
+    # Paso 4: Modelado
+    # ------------------------------------------------------------------
     print("[PIPELINE] Paso 4: Modelado...")
-    try:
-        import importlib
-        p04 = importlib.import_module("04_modelado")
-        mod_xgb = MODELOS_PATH / "modelo_xgboost.joblib"
-        if not mod_xgb.exists():
-            resultados["metricas_modelos"] = p04.main()
-        else:
-            ruta_tabla = TABLAS_PATH / "resultados_modelos.csv"
-            if ruta_tabla.exists():
-                resultados["metricas_modelos"] = pd.read_csv(ruta_tabla, index_col=0)
-                print("  Métricas de modelos cargadas desde caché.")
-            else:
-                resultados["metricas_modelos"] = p04.main()
-    except Exception:
-        print(f"  ERROR Paso 4: {traceback.format_exc()}")
+    ruta_tabla_mod = TABLAS_PATH / "resultados_modelos.csv"
+    mod_xgb        = MODELOS_PATH / "modelo_xgboost.joblib"
+    if not mod_xgb.exists():
+        res = _run_safe("Paso 4", importlib.import_module("04_modelado").main)
+        resultados["metricas_modelos"] = res
+    elif ruta_tabla_mod.exists():
+        resultados["metricas_modelos"] = pd.read_csv(ruta_tabla_mod, index_col=0)
+        print("  Métricas de modelos cargadas desde caché.")
+    else:
         resultados["metricas_modelos"] = None
+    gc.collect()
 
-    # --- Paso 5: Calibración Lifetime PD ---
+    # ------------------------------------------------------------------
+    # Paso 5: Calibración Lifetime PD
+    # ------------------------------------------------------------------
     print("[PIPELINE] Paso 5: Calibración Lifetime PD...")
-    try:
-        import importlib
-        p05 = importlib.import_module("05_calibracion_lifetime")
-        ruta_lt = TABLAS_PATH / "curva_pd_lifetime.csv"
-        if not ruta_lt.exists():
-            resultados["lifetime_pd"] = p05.main()
-        else:
-            resultados["lifetime_pd"] = pd.read_csv(ruta_lt)
-            print("  Lifetime PD cargado desde caché.")
-    except Exception:
-        print(f"  ERROR Paso 5: {traceback.format_exc()}")
-        resultados["lifetime_pd"] = None
+    ruta_lt = TABLAS_PATH / "curva_pd_lifetime.csv"
+    if not ruta_lt.exists():
+        _run_safe("Paso 5", importlib.import_module("05_calibracion_lifetime").main)
+    resultados["lifetime_pd"] = pd.read_csv(ruta_lt) if ruta_lt.exists() else None
+    if resultados["lifetime_pd"] is not None:
+        print("  Lifetime PD OK.")
+    gc.collect()
 
-    # --- Paso 6: Validación ---
+    # ------------------------------------------------------------------
+    # Paso 6: Validación
+    # ------------------------------------------------------------------
     print("[PIPELINE] Paso 6: Validación...")
-    try:
-        import importlib
-        p06 = importlib.import_module("06_validacion")
-        ruta_val = TABLAS_PATH / "validacion_metricas.csv"
-        if not ruta_val.exists():
-            resultados["validacion"] = p06.main()
-        else:
-            resultados["validacion"] = pd.read_csv(ruta_val, index_col=0)
-            print("  Métricas de validación cargadas desde caché.")
-    except Exception:
-        print(f"  ERROR Paso 6: {traceback.format_exc()}")
-        resultados["validacion"] = None
+    ruta_val = TABLAS_PATH / "validacion_metricas.csv"
+    if not ruta_val.exists():
+        _run_safe("Paso 6", importlib.import_module("06_validacion").main)
+    resultados["validacion"] = pd.read_csv(ruta_val, index_col=0) if ruta_val.exists() else None
+    if resultados["validacion"] is not None:
+        print("  Validación OK.")
+    gc.collect()
 
-    # --- Paso 7: Explicabilidad ---
+    # ------------------------------------------------------------------
+    # Paso 7: Explicabilidad SHAP
+    # ------------------------------------------------------------------
     print("[PIPELINE] Paso 7: Explicabilidad SHAP...")
-    try:
-        import importlib
-        p07 = importlib.import_module("07_explicabilidad")
-        if not (FIGURAS_PATH / "shap_summary_xgboost.png").exists():
-            p07.main()
-        else:
-            print("  Figuras SHAP cargadas desde caché.")
-    except Exception:
-        print(f"  ERROR Paso 7: {traceback.format_exc()}")
+    if not (FIGURAS_PATH / "shap_summary_xgboost.png").exists():
+        _run_safe("Paso 7", importlib.import_module("07_explicabilidad").main)
+    else:
+        print("  Figuras SHAP cargadas desde caché.")
+    gc.collect()
 
     return resultados
 
@@ -309,9 +348,10 @@ def construir_docx(resultados: dict):
         section.left_margin   = Cm(3.0)
         section.right_margin  = Cm(2.5)
 
-    eda = resultados.get("eda", {})
-    panel_def = resultados.get("panel_def")
-    ds_mod    = resultados.get("dataset_mod")
+    eda       = resultados.get("eda", {})
+    # panel_def y dataset_mod ahora son dicts de stats (no DataFrames completos)
+    panel_def = resultados.get("panel_def")   # dict: dist_stage, tasa_12m, n_total
+    ds_mod    = resultados.get("dataset_mod") # dict: n_obs, tasa_12m
     met_mod   = resultados.get("metricas_modelos")
     lifetime  = resultados.get("lifetime_pd")
     val       = resultados.get("validacion")
@@ -636,12 +676,15 @@ def construir_docx(resultados: dict):
     )
 
     if panel_def is not None:
-        n_panel = len(panel_def)
-        n_loans_panel = panel_def["loan_sequence_number"].nunique() \
-            if "loan_sequence_number" in panel_def.columns else "N/A"
+        # panel_def es ahora un dict de stats (no el DF completo)
+        n_panel       = panel_def.get("n_total", "N/A") if isinstance(panel_def, dict) else len(panel_def)
+        panel_n_str   = f"{n_panel:,}" if isinstance(n_panel, int) else str(n_panel)
+        p_stats       = resultados.get("panel_stats", {})
+        n_loans_panel = p_stats.get("n_loans", "N/A")
+        n_loans_p_str = f"{n_loans_panel:,}" if isinstance(n_loans_panel, int) else str(n_loans_panel)
         agregar_parrafo(doc,
-            f"El panel longitudinal resultante contiene {n_panel:,} observaciones mensuales "
-            f"correspondientes a {n_loans_panel:,} préstamos únicos."
+            f"El panel longitudinal resultante contiene {panel_n_str} observaciones mensuales "
+            f"correspondientes a {n_loans_p_str} préstamos únicos."
         )
 
     salto_pagina(doc)
@@ -663,19 +706,20 @@ def construir_docx(resultados: dict):
         "# Stage 1: DPD=0 | Stage 2: 1≤DPD<3 | Stage 3: DPD≥3 o default"
     )
 
-    if panel_def is not None and "ifrs9_stage" in panel_def.columns:
+    panel_def_dict = panel_def if isinstance(panel_def, dict) else None
+    if panel_def_dict and "dist_stage" in panel_def_dict:
         agregar_titulo(doc, "6.1 Distribución de Stages IFRS 9", nivel=2)
-        dist_stage = panel_def["ifrs9_stage"].value_counts().sort_index()
+        dist_stage = panel_def_dict["dist_stage"]
+        n_tot      = panel_def_dict.get("n_total", dist_stage.sum())
         df_stages = pd.DataFrame({
             "Stage": [f"Stage {s}" for s in dist_stage.index],
             "Observaciones": [f"{v:,}" for v in dist_stage.values],
-            "Porcentaje (%)": [f"{v/len(panel_def)*100:.2f}%" for v in dist_stage.values],
+            "Porcentaje (%)": [f"{v/n_tot*100:.2f}%" for v in dist_stage.values],
         })
         agregar_tabla_df(doc, df_stages, "Tabla 2. Distribución de stages IFRS 9")
 
-        if "default_12m" in panel_def.columns:
-            df_activos = panel_def[panel_def["ifrs9_stage"].isin([1, 2])]
-            tasa_12m = df_activos["default_12m"].mean()
+        tasa_12m = panel_def_dict.get("tasa_12m")
+        if tasa_12m is not None:
             agregar_parrafo(doc,
                 f"La tasa de default a 12 meses sobre las observaciones activas (Stage 1 y 2) "
                 f"es de {tasa_12m:.4%}, lo que refleja el carácter desbalanceado típico de "
@@ -719,11 +763,13 @@ def construir_docx(resultados: dict):
     agregar_tabla_df(doc, tabla_features, "Tabla 3. Variables del modelo PD IFRS 9")
 
     if ds_mod is not None:
-        n_mod = len(ds_mod)
-        tasa_mod = ds_mod["default_12m"].mean() if "default_12m" in ds_mod.columns else None
+        # ds_mod es un dict de stats
+        n_mod    = ds_mod.get("n_obs", "N/A") if isinstance(ds_mod, dict) else len(ds_mod)
+        tasa_mod = ds_mod.get("tasa_12m") if isinstance(ds_mod, dict) else None
         tasa_mod_str = f"{tasa_mod:.4%}" if tasa_mod else "N/A"
+        n_mod_fmt    = f"{n_mod:,}" if isinstance(n_mod, int) else str(n_mod)
         agregar_parrafo(doc,
-            f"El dataset de modelado (Stage 1 y 2 únicamente) contiene {n_mod:,} observaciones, "
+            f"El dataset de modelado (Stage 1 y 2 únicamente) contiene {n_mod_fmt} observaciones, "
             f"con una tasa de default a 12 meses de {tasa_mod_str}."
         )
 

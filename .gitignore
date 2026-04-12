@@ -2,3 +2,7 @@
 /data_sample_year
 .venv
 .env
+.gitignore
+crear_tesis.py
+/src/__pycache__
+

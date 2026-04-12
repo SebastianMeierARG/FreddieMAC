@@ -34,6 +34,11 @@ from config import (
     FEATURES_MODELO, TARGET,
     AÑOS_TEST,
 )
+import sys as _sys, os as _os
+_sys.path.insert(0, str(_os.path.dirname(__file__)))
+from importlib import import_module as _im
+_p04 = _im("04_modelado")
+ModeloCalibraado = _p04.ModeloCalibraado  # noqa: F401
 
 warnings.filterwarnings("ignore")
 plt.rcParams.update({"font.family": "serif", "font.size": 11})
@@ -79,18 +84,17 @@ def analisis_shap_xgboost(modelo_calibrado, X_muestra: pd.DataFrame) -> None:
     """
     print("  Calculando SHAP values (XGBoost)...")
 
-    # Extraer el XGBClassifier del pipeline calibrado
-    # CalibratedClassifierCV envuelve el pipeline; accedemos al estimador base
+    # Extraer el XGBClassifier del pipeline base (ModeloCalibraado._base es un Pipeline)
     try:
-        estimador_base = modelo_calibrado.calibrated_classifiers_[0].estimator
-        xgb_model = estimador_base.named_steps["modelo"]
-        imputer = estimador_base.named_steps["imputer"]
+        pipeline_base = getattr(modelo_calibrado, "_base", modelo_calibrado)
+        xgb_model = pipeline_base.named_steps["modelo"]
+        imputer   = pipeline_base.named_steps["imputer"]
         X_imp = pd.DataFrame(
             imputer.transform(X_muestra),
             columns=X_muestra.columns,
         )
-    except AttributeError:
-        print("  No se pudo extraer el modelo XGBoost interno.")
+    except (AttributeError, KeyError) as e:
+        print(f"  No se pudo extraer el modelo XGBoost interno: {e}")
         return
 
     explainer = shap.TreeExplainer(xgb_model)
@@ -166,10 +170,8 @@ def importancia_gain_xgboost(modelo_calibrado, features: list) -> None:
     Gain = reducción total de la función de pérdida atribuida a cada feature.
     """
     try:
-        xgb_model = (
-            modelo_calibrado.calibrated_classifiers_[0]
-            .estimator.named_steps["modelo"]
-        )
+        pipeline_base = getattr(modelo_calibrado, "_base", modelo_calibrado)
+        xgb_model = pipeline_base.named_steps["modelo"]
         scores = xgb_model.get_booster().get_score(importance_type="gain")
         df_imp = (
             pd.Series(scores, name="gain")
@@ -214,8 +216,10 @@ def main():
         print(f"  Modelo no encontrado: {ruta_xgb}")
         return
 
-    modelo_xgb = joblib.load(ruta_xgb)
+    modelo_xgb_raw = joblib.load(ruta_xgb)
     print(f"Modelo XGBoost cargado: {ruta_xgb.name}")
+    # Extraer el pipeline base de ModeloCalibraado si corresponde
+    modelo_xgb = getattr(modelo_xgb_raw, "_base", modelo_xgb_raw)
 
     # Muestra de test para SHAP
     X_muestra = preparar_muestra_test(dataset, features, n=N_MUESTRA_SHAP)
@@ -227,7 +231,7 @@ def main():
         shap_values, X_imp, explainer = resultado_shap
 
         # Explicación individual: préstamo de mayor PD predicha
-        prob = modelo_xgb.predict_proba(X_muestra)[:, 1]
+        prob = modelo_xgb_raw.predict_proba(X_muestra)[:, 1]
         idx_alto_riesgo = np.argmax(prob)
         print(f"\n  Explicando préstamo de mayor riesgo (PD={prob[idx_alto_riesgo]:.4%})...")
         explicar_prestamo_individual(shap_values, X_imp, explainer, idx_alto_riesgo)

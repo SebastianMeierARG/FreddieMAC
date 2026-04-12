@@ -38,6 +38,11 @@ from config import (
     FEATURES_MODELO, TARGET,
     AÑOS_ENTRENAMIENTO, AÑOS_VALIDACION, AÑOS_TEST,
 )
+import sys as _sys, os as _os
+_sys.path.insert(0, str(_os.path.dirname(__file__)))
+from importlib import import_module as _im
+_p04 = _im("04_modelado")
+ModeloCalibraado = _p04.ModeloCalibraado  # noqa: F401
 
 warnings.filterwarnings("ignore")
 plt.rcParams.update({"font.family": "serif", "font.size": 11})

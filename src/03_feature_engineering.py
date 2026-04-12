@@ -137,7 +137,29 @@ def construir_dataset_modelado(panel: pd.DataFrame) -> pd.DataFrame:
       - Excluir últimas 12 observaciones de cada préstamo (sin horizonte suficiente)
     """
     print("  Creando features de comportamiento...")
-    df = panel.copy()
+    # Seleccionamos solo las columnas necesarias para ahorrar RAM.
+    # El panel completo tiene ~64 columnas; el modelo usa ~25.
+    cols_necesarias = list(set(
+        ["loan_sequence_number", "monthly_reporting_period",
+         "vintage_year", "ifrs9_stage", "default_12m",
+         "dpd_numerico", "current_actual_upb", "current_interest_rate",
+         "modification_flag", "payment_deferral_flag",
+         "estimated_loan_to_value_eltv", "loan_age",
+         # features de originación
+         "credit_score", "original_ltv", "original_cltv", "original_dti",
+         "original_interest_rate", "original_loan_term", "original_upb",
+         "number_of_borrowers", "loan_purpose", "property_type",
+         "occupancy_status", "channel", "amortization_type", "number_of_units",
+        ]
+    ) & set(panel.columns))
+    # El panel ya fue cargado con solo las columnas necesarias (via read_parquet columns=)
+    # Usamos reset_index para obtener un DataFrame contiguo sin .copy() que daría OOM
+    df = panel.reset_index(drop=True)
+    del panel  # liberar referencia al parquet original
+
+    # Reducir uso de RAM: convertir float64 a float32
+    for col in df.select_dtypes(include="float64").columns:
+        df[col] = df[col].astype("float32")
 
     df = crear_features_rolling_dpd(df)
     df = crear_features_tasa(df)
@@ -148,8 +170,9 @@ def construir_dataset_modelado(panel: pd.DataFrame) -> pd.DataFrame:
 
     # Filtrar: solo Stage 1 y 2 (observaciones activas, no en default)
     n_antes = len(df)
-    df = df[df["ifrs9_stage"].isin([1, 2])].copy()
-    print(f"  Filtrado Stage 1/2: {n_antes:,} → {len(df):,} filas")
+    mask = df["ifrs9_stage"].isin([1, 2])
+    df = df.loc[mask].reset_index(drop=True)   # reset_index evita consolidación RAM
+    print(f"  Filtrado Stage 1/2: {n_antes:,} -> {len(df):,} filas")
 
     # Estadísticas de la variable objetivo
     print(f"\n  Tasa de default a 12m en dataset modelado: {df[TARGET].mean():.4%}")
@@ -178,7 +201,22 @@ def main():
     print("PASO 3 – Feature Engineering")
     print("=" * 60)
 
-    panel = pd.read_parquet(PANEL_DEF_PARQUET)
+    # Leer solo las columnas necesarias para evitar OOM en la lectura de 3GB
+    cols_leer = list(set([
+        "loan_sequence_number", "monthly_reporting_period",
+        "vintage_year", "ifrs9_stage", "default_12m",
+        "dpd_numerico", "current_actual_upb", "current_interest_rate",
+        "modification_flag", "payment_deferral_flag",
+        "estimated_loan_to_value_eltv", "loan_age",
+        "credit_score", "original_ltv", "original_cltv", "original_dti",
+        "original_interest_rate", "original_loan_term", "original_upb",
+        "number_of_borrowers", "loan_purpose", "property_type",
+        "occupancy_status", "channel", "amortization_type", "number_of_units",
+    ]))
+    import pyarrow.parquet as pq
+    available = pq.read_schema(PANEL_DEF_PARQUET).names
+    cols_leer = [c for c in cols_leer if c in available]
+    panel = pd.read_parquet(PANEL_DEF_PARQUET, columns=cols_leer)
     print(f"Panel cargado: {len(panel):,} filas")
 
     dataset = construir_dataset_modelado(panel)

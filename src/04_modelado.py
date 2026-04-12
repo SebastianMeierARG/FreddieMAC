@@ -24,8 +24,8 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.isotonic import IsotonicRegression
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, brier_score_loss
@@ -40,6 +40,18 @@ from config import (
 )
 
 warnings.filterwarnings("ignore")
+
+
+class ModeloCalibraado:
+    """Pipeline + calibrador isotónico, serializable con joblib."""
+    def __init__(self, base_pipeline, calibrador_iso):
+        self._base  = base_pipeline
+        self._calib = calibrador_iso
+
+    def predict_proba(self, X):
+        raw = self._base.predict_proba(X)[:, 1]
+        cal = self._calib.predict(raw)
+        return np.column_stack([1 - cal, cal])
 
 
 # ---------------------------------------------------------------------------
@@ -183,10 +195,12 @@ def entrenar_evaluar(nombre, pipeline, X_train, y_train,
     print(f"\n  [{nombre}] Entrenando...")
     pipeline.fit(X_train, y_train)
 
-    # Calibración Platt Scaling (isotonic si hay suficientes datos)
-    # Mejora la calibración de probabilidades (fundamental para IFRS 9 ECL)
-    calibrado = CalibratedClassifierCV(pipeline, method="isotonic", cv="prefit")
-    calibrado.fit(X_val, y_val)
+    # Calibración isotónica en el conjunto de validación
+    # (sklearn >= 1.2 ya no acepta cv="prefit" en CalibratedClassifierCV)
+    raw_proba_val  = pipeline.predict_proba(X_val)[:, 1]
+    calibrador_iso = IsotonicRegression(out_of_bounds="clip")
+    calibrador_iso.fit(raw_proba_val, y_val)
+    calibrado = ModeloCalibraado(pipeline, calibrador_iso)
 
     # Predicciones
     prob_val  = calibrado.predict_proba(X_val)[:, 1]
@@ -228,6 +242,17 @@ def main():
     n_neg = len(y_train) - n_pos
     ratio = n_neg / n_pos
     print(f"\n  Ratio de desbalance (neg/pos): {ratio:.1f}x")
+
+    # Subsampleo del conjunto de entrenamiento para evitar OOM en máquinas con
+    # poca RAM. 1.000.000 de observaciones con la tasa de default observada
+    # (~1.3%) entrega ~13.000 eventos: suficiente para modelos robustos.
+    # (El dataset completo de 11.5M filas requeriría ~2.2 GB en float64.)
+    MAX_TRAIN = 1_000_000
+    if len(X_train) > MAX_TRAIN:
+        idx = np.random.RandomState(42).choice(len(X_train), MAX_TRAIN, replace=False)
+        X_train = X_train.iloc[idx]
+        y_train = y_train.iloc[idx]
+        print(f"  Submuestreo entrenamiento: {MAX_TRAIN:,} obs (de {len(y_train)+MAX_TRAIN:,})")
 
     # Definir modelos
     modelos = {

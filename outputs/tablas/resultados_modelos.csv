@@ -1,0 +1,4 @@
+Modelo,AUC_val,Gini_val,Brier_val,AUC_test,Gini_test,Brier_test
+Logistica,0.8169,0.6338,0.0077,0.8527,0.7053,0.003
+XGBoost,0.8202,0.6404,0.0077,0.7804,0.5609,0.0028
+Random_Forest,0.8313,0.6627,0.0076,0.8251,0.6501,0.0028
