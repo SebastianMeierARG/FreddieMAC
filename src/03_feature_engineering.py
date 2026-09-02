@@ -23,8 +23,8 @@ import pandas as pd
 import numpy as np
 
 from config import (
-    PANEL_DEF_PARQUET, DATASET_MOD_PARQUET,
-    FEATURES_MODELO, TARGET,
+    PANEL_DEF_PARQUET, DATASET_MOD_PARQUET, MACRO_PARQUET,
+    FEATURES_MODELO, MACRO_FEATURES, TARGET,
     AÑOS_ENTRENAMIENTO, AÑOS_VALIDACION, AÑOS_TEST,
 )
 
@@ -88,6 +88,25 @@ def crear_flags_binarios(df: pd.DataFrame) -> pd.DataFrame:
         df["payment_deferral_flag"].isin(["Y", "P"])
     ).astype("Int8")
 
+    return df
+
+
+def merge_macro(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agrega variables macroeconómicas al panel mergeando por monthly_reporting_period.
+    monthly_reporting_period ya es datetime (primer día del mes) desde paso 01.
+    Si el parquet macro no existe, omite con advertencia (pipeline sigue funcionando).
+    """
+    if not MACRO_PARQUET.exists():
+        print("  ADVERTENCIA: datos macro no disponibles – ejecutar 00_macro_data.py")
+        return df
+
+    macro = pd.read_parquet(MACRO_PARQUET)
+    macro["date"] = pd.to_datetime(macro["date"])
+    df = df.merge(macro, left_on="monthly_reporting_period", right_on="date", how="left")
+    df.drop(columns=["date"], inplace=True)
+    disponibles = [c for c in MACRO_FEATURES if c in df.columns]
+    print(f"  Variables macro integradas: {disponibles}")
     return df
 
 
@@ -166,6 +185,7 @@ def construir_dataset_modelado(panel: pd.DataFrame) -> pd.DataFrame:
     df = crear_features_upb(df)
     df = crear_flags_binarios(df)
     df = tratar_eltv(df)
+    df = merge_macro(df)
     df = codificar_categoricas(df)
 
     # Filtrar: solo Stage 1 y 2 (observaciones activas, no en default)

@@ -34,7 +34,8 @@ from sklearn.metrics import (
 )
 
 from config import (
-    DATASET_MOD_PARQUET, MODELOS_PATH, TABLAS_PATH, FIGURAS_PATH,
+    DATASET_MOD_PARQUET, PANEL_DEF_PARQUET,
+    MODELOS_PATH, TABLAS_PATH, FIGURAS_PATH,
     FEATURES_MODELO, TARGET,
     AÑOS_ENTRENAMIENTO, AÑOS_VALIDACION, AÑOS_TEST,
 )
@@ -186,6 +187,206 @@ def graficar_backtesting(df_bt: pd.DataFrame) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Prioridad 3: Backtesting de transiciones entre stages (EBA GL 38/66, BIS d350 P3)
+# ---------------------------------------------------------------------------
+
+def backtesting_transiciones() -> tuple:
+    """
+    Construye la matriz de transición trimestral observada entre stages IFRS 9
+    y calcula tasas de curación por trimestre/año.
+
+    Lee panel_con_default.parquet para incluir observaciones Stage 3
+    (excluidas del dataset de modelado).
+
+    Outputs:
+      outputs/tablas/transition_matrix_observed.csv
+      outputs/tablas/cure_rates_quarterly.csv
+    """
+    print("\n  [Backtesting de transiciones de stages]")
+    cols = ["loan_sequence_number", "monthly_reporting_period",
+            "vintage_year", "ifrs9_stage"]
+    panel = pd.read_parquet(PANEL_DEF_PARQUET, columns=cols)
+    panel = panel.sort_values(["loan_sequence_number", "monthly_reporting_period"])
+
+    # Stage en t+3 meses (3 períodos hacia adelante dentro de cada préstamo)
+    panel["stage_q3"] = (
+        panel.groupby("loan_sequence_number")["ifrs9_stage"]
+        .shift(-3)
+    )
+    panel = panel.dropna(subset=["stage_q3"]).copy()
+    panel["stage_q3"] = panel["stage_q3"].astype("Int8")
+
+    # Matriz de transición: proporción de transiciones Stage_i → Stage_j
+    trans = (
+        panel.groupby(["ifrs9_stage", "stage_q3"])
+        .size()
+        .reset_index(name="count")
+    )
+    totales = trans.groupby("ifrs9_stage")["count"].transform("sum")
+    trans["prob"] = (trans["count"] / totales).round(4)
+    matriz = trans.pivot(
+        index="ifrs9_stage", columns="stage_q3", values="prob"
+    ).fillna(0)
+
+    # Métricas clave
+    s1_to_s3 = float(matriz.loc[1, 3]) if (1 in matriz.index and 3 in matriz.columns) else np.nan
+    cure_rate = float(matriz.loc[2, 1]) if (2 in matriz.index and 1 in matriz.columns) else np.nan
+
+    print("  Matriz de transición trimestral (Stage t → Stage t+3m):")
+    print(matriz.round(4).to_string())
+    if not np.isnan(s1_to_s3):
+        print(f"\n  Stage 1→3 directo (sin pasar por Stage 2): {s1_to_s3:.4%}")
+        if s1_to_s3 > 0.01:
+            print("    AVISO: tasa alta – el SICR puede no estar capturando deterioro temprano")
+    if not np.isnan(cure_rate):
+        print(f"  Cure rate trimestral (Stage 2→1): {cure_rate:.4%}")
+
+    # Cure rate anual (por año del período de reporte)
+    panel_s2 = panel[panel["ifrs9_stage"] == 2].copy()
+    panel_s2["year"] = pd.to_datetime(
+        panel_s2["monthly_reporting_period"]
+    ).dt.year
+    cure_anual = (
+        panel_s2.groupby("year")
+        .apply(lambda x: (x["stage_q3"] == 1).mean())
+        .reset_index()
+        .rename(columns={0: "cure_rate"})
+    )
+
+    # PSI de distribución de stages entre train y test
+    dist_train = panel[panel["vintage_year"].isin(AÑOS_ENTRENAMIENTO)]["ifrs9_stage"].value_counts(normalize=True)
+    dist_test  = panel[panel["vintage_year"].isin(AÑOS_TEST)]["ifrs9_stage"].value_counts(normalize=True)
+    stages_comunes = dist_train.index.intersection(dist_test.index)
+    if len(stages_comunes) > 0:
+        p_ref = dist_train.loc[stages_comunes].clip(1e-6)
+        p_new = dist_test.loc[stages_comunes].clip(1e-6)
+        psi_stages = float(np.sum((p_new - p_ref) * np.log(p_new / p_ref)))
+        print(f"  PSI distribución de stages (train vs test): {psi_stages:.4f}")
+
+    # Guardar outputs
+    matriz.to_csv(TABLAS_PATH / "transition_matrix_observed.csv")
+    cure_anual.to_csv(TABLAS_PATH / "cure_rates_quarterly.csv", index=False)
+    print(f"  Guardado: transition_matrix_observed.csv, cure_rates_quarterly.csv")
+
+    return matriz, cure_anual
+
+
+# ---------------------------------------------------------------------------
+# Prioridad 4: Validación de curva Lifetime PD (EBA GL 66, BIS d350 Principio 5)
+# ---------------------------------------------------------------------------
+
+def backtesting_lifetime_pd() -> pd.DataFrame:
+    """
+    Compara la curva de Lifetime PD predicha (paso 05) contra la tasa de default
+    acumulada observada por cohorte de originación (vintage_year).
+
+    Para cada vintage y horizonte h (12, 24, 36, 48, 60 meses):
+      - Observada: P(prestamo defaultó dentro de sus primeros h meses de vida)
+      - Predicha:  Lifetime PD acumulada al loan_age h (de curva_pd_lifetime.csv)
+
+    Outputs:
+      outputs/figuras/lifetime_pd_backtest.png
+      outputs/tablas/lifetime_pd_backtest_by_vintage.csv
+    """
+    ruta_curva = TABLAS_PATH / "curva_pd_lifetime.csv"
+    if not ruta_curva.exists():
+        print("\n  [Backtesting Lifetime PD] curva_pd_lifetime.csv no encontrada – omitido")
+        return pd.DataFrame()
+
+    print("\n  [Backtesting Lifetime PD vs. defaults observados]")
+    horizons = [12, 24, 36, 48, 60]
+
+    # --- Datos observados ---
+    cols = ["loan_sequence_number", "loan_age", "vintage_year", "evento_default"]
+    panel = pd.read_parquet(PANEL_DEF_PARQUET, columns=cols)
+
+    # Por cada préstamo: primera edad de default y edad máxima observada
+    first_default = (
+        panel[panel["evento_default"]]
+        .groupby("loan_sequence_number")["loan_age"]
+        .min()
+        .rename("first_default_age")
+    )
+    loan_info = panel.groupby("loan_sequence_number").agg(
+        vintage_year=("vintage_year", "first"),
+        max_age=("loan_age", "max"),
+    )
+    loan_info = loan_info.join(first_default)
+
+    # --- Curva predicha ---
+    lifetime_pred = pd.read_csv(ruta_curva)
+
+    def pd_pred_at(h: int) -> float:
+        sub = lifetime_pred[lifetime_pred["loan_age"] <= h]
+        return float(sub["pd_lifetime_acum"].iloc[-1]) if len(sub) > 0 else np.nan
+
+    pred_at = {h: pd_pred_at(h) for h in horizons}
+
+    # --- Comparar por vintage y horizonte ---
+    rows = []
+    for vintage in sorted(loan_info["vintage_year"].unique()):
+        loans_v = loan_info[loan_info["vintage_year"] == vintage]
+        for h in horizons:
+            eligible = loans_v[loans_v["max_age"] >= h]
+            if len(eligible) < 100:
+                continue
+            obs = float((eligible["first_default_age"] <= h).mean())
+            pred = pred_at[h]
+            rows.append({
+                "vintage_year":    vintage,
+                "horizon_months":  h,
+                "obs_default_rate": round(obs,  6),
+                "pred_lifetime_pd": round(pred, 6) if not np.isnan(pred) else np.nan,
+                "ratio_pred_obs":   round(pred / obs, 3) if obs > 0 and not np.isnan(pred) else np.nan,
+                "abs_error":        round(abs(pred - obs), 6) if not np.isnan(pred) else np.nan,
+                "n_loans":          len(eligible),
+            })
+
+    df_bt = pd.DataFrame(rows)
+    if df_bt.empty:
+        print("  No hay suficientes datos para backtesting Lifetime PD.")
+        return df_bt
+
+    mae = df_bt["abs_error"].mean()
+    ratio_medio = df_bt["ratio_pred_obs"].mean()
+    print(f"  MAE predicho vs. observado: {mae:.4%}")
+    print(f"  Ratio medio predicho/observado: {ratio_medio:.3f} (>1=conservador, <1=subestimación)")
+
+    df_bt.to_csv(TABLAS_PATH / "lifetime_pd_backtest_by_vintage.csv", index=False)
+
+    # Gráfico: curvas por vintage y horizonte
+    vintages = sorted(df_bt["vintage_year"].unique())
+    colores_base = plt.cm.tab10(np.linspace(0, 1, len(vintages)))
+    fig, ax = plt.subplots(figsize=(11, 7))
+
+    for i, vintage in enumerate(vintages):
+        sub = df_bt[df_bt["vintage_year"] == vintage].sort_values("horizon_months")
+        color = colores_base[i]
+        ax.plot(sub["horizon_months"], sub["obs_default_rate"] * 100,
+                color=color, linewidth=2, marker="o", label=f"{vintage} obs.")
+        ax.plot(sub["horizon_months"], sub["pred_lifetime_pd"] * 100,
+                color=color, linewidth=1.5, linestyle="--")
+
+    # Línea dummy para la leyenda del estilo
+    ax.plot([], [], "k-",  linewidth=2, label="Observada (sólida)")
+    ax.plot([], [], "k--", linewidth=1.5, label="Predicha (punteada)")
+    ax.set_xlabel("Horizonte (meses desde originación)")
+    ax.set_ylabel("Tasa de default acumulada (%)")
+    ax.set_title("Backtesting Lifetime PD: predicha vs. observada por vintage\n"
+                 f"MAE={mae:.4%} | Ratio medio={ratio_medio:.3f}")
+    ax.legend(fontsize=8, ncol=2)
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    ruta_fig = FIGURAS_PATH / "lifetime_pd_backtest.png"
+    plt.savefig(ruta_fig, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  Gráfico guardado: {ruta_fig}")
+    print(f"  Tabla guardada:   lifetime_pd_backtest_by_vintage.csv")
+
+    return df_bt
+
+
+# ---------------------------------------------------------------------------
 # Función principal
 # ---------------------------------------------------------------------------
 
@@ -272,6 +473,12 @@ def main():
     # Gráficos
     graficar_curva_roc(resultados_roc)
     graficar_backtesting(df_bt_all)
+
+    # Prioridad 3: backtesting de transiciones entre stages
+    backtesting_transiciones()
+
+    # Prioridad 4: backtesting de la curva Lifetime PD
+    backtesting_lifetime_pd()
 
     print("\nPaso 6 completado.\n")
     return df_metricas

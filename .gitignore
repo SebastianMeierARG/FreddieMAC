@@ -7,4 +7,6 @@ crear_tesis.py
 /src/__pycache__
 .gitignore
 claude.md
+.claude
+.doc
 

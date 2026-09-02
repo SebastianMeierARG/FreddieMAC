@@ -22,6 +22,9 @@ TABLAS_PATH  = OUTPUTS_PATH / "tablas"
 for p in [OUTPUTS_PATH, FIGURAS_PATH, MODELOS_PATH, TABLAS_PATH]:
     p.mkdir(parents=True, exist_ok=True)
 
+MACRO_PATH = DATA_PATH / "macro"
+MACRO_PATH.mkdir(parents=True, exist_ok=True)
+
 # ---------------------------------------------------------------------------
 # Archivos de datos intermedios (se van generando por paso)
 # ---------------------------------------------------------------------------
@@ -89,6 +92,40 @@ FEATURES_COMPORTAMIENTO = [
     "amortizacion_upb",                    # Amortización relativa del saldo
 ]
 
-FEATURES_MODELO = FEATURES_ORIGINACION + FEATURES_COMPORTAMIENTO
+MACRO_FEATURES = [
+    "hpi",
+    "unemployment_rate",
+    "fed_funds_rate",
+    "gdp_real",
+    "mortgage_rate_30y",
+    "hpi_yoy_change",
+    "unemployment_yoy_change",
+]
+
+FEATURES_MODELO = FEATURES_ORIGINACION + FEATURES_COMPORTAMIENTO + MACRO_FEATURES
 
 TARGET = "default_12m"   # Variable objetivo: default en los próximos 12 meses
+
+# ---------------------------------------------------------------------------
+# Datos macroeconómicos (FRED) – Forward-Looking Information (IFRS 9 5.5.17c)
+# ---------------------------------------------------------------------------
+MACRO_PARQUET = MACRO_PATH / "macro_monthly.parquet"
+
+FRED_SERIES = {
+    "USSTHPI":      "hpi",               # House Price Index (trimestral)
+    "UNRATE":       "unemployment_rate", # Tasa de desempleo (mensual)
+    "FEDFUNDS":     "fed_funds_rate",    # Fed Funds Rate (mensual)
+    "GDPC1":        "gdp_real",          # GDP real (trimestral)
+    "MORTGAGE30US": "mortgage_rate_30y", # Mortgage rate 30y (semanal)
+}
+
+# ---------------------------------------------------------------------------
+# IFRS 9 – Ponderación de escenarios macroeconómicos (IFRS 9 5.5.17c / BIS d350 P6)
+# ---------------------------------------------------------------------------
+SCENARIO_WEIGHTS = {"base": 0.50, "pessimistic": 0.30, "optimistic": 0.20}
+
+# ---------------------------------------------------------------------------
+# SICR basado en PD (IFRS 9 5.5.9 / EBA GL 135-138)
+# ---------------------------------------------------------------------------
+SICR_RELATIVE_THRESHOLD = 2.5    # PD actual > 2.5x PD en originación
+SICR_ABSOLUTE_THRESHOLD = 0.005  # o incremento absoluto > 0.5pp
