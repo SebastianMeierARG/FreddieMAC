@@ -1,0 +1,27 @@
+variable,IV,fuerza
+credit_score,0.5318109078990414,sospechoso (revisar)
+fico_vs_cohorte,0.4666699332935887,fuerte
+amortizacion_upb,0.290571529766922,medio
+estimated_loan_to_value_eltv,0.24211845961842918,medio
+original_dti,0.2352949140409757,medio
+rate_vs_cohorte,0.178290310804887,medio
+age_ratio,0.13148475216095645,medio
+original_cltv,0.13026910983732967,medio
+original_ltv,0.12337653285169585,medio
+loan_age,0.10957175869376895,medio
+ltv_vs_cohorte,0.09514503231067789,débil
+number_of_borrowers,0.08081201433422205,débil
+original_loan_term,0.07056388966186286,débil
+loan_purpose,0.03928134224856243,débil
+upb_vs_cohorte,0.026300142901526834,débil
+channel,0.01580839096196134,no predictivo
+occupancy_status,0.010472295694426356,no predictivo
+number_of_units,0.003524736891407908,no predictivo
+property_type,3.74739515211937e-05,no predictivo
+fue_modificado,0.0,no predictivo
+max_dpd_6m,0.0,no predictivo
+max_dpd_3m,0.0,no predictivo
+dpd_numerico,0.0,no predictivo
+max_dpd_12m,0.0,no predictivo
+tiene_deferral,0.0,no predictivo
+spread_tasa,0.0,no predictivo

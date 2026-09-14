@@ -19,6 +19,7 @@ Pasos:
     6b. Segmentación: validación empírica (Control 3.6)      [requiere paso 4]
     7.  Explicabilidad SHAP
     8.  LGD y EAD (Controles 7.5, 8.1, 8.2, 8.6)
+    9.  Costo de la Regulación: scorecard WoE vs. ML sin restricciones [requiere paso 3b]
 """
 
 import os
@@ -78,6 +79,7 @@ def main():
         ("6b", "Segmentación: validación empírica (Control 3.6)", "06b_segmentacion", False),
         (7, "Explicabilidad SHAP",                    "07_explicabilidad",       False),
         (8, "LGD y EAD (Controles 7.5, 8.1, 8.2, 8.6)", "08_lgd_ead",            False),
+        (9, "Costo de la Regulación: WoE vs. ML sin restricciones", "09_woe_vs_ml", False),
     ]
 
     for numero, nombre, modulo, opcional in pasos_principales:
