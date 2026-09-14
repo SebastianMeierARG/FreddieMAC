@@ -16,7 +16,9 @@ Pasos:
     5.  Calibración PIT + Lifetime PD
     5b. Ponderación de escenarios macroeconómicos            [requiere paso 0 y 4]
     6.  Validación regulatoria (incluye backtesting transiciones + Lifetime PD)
+    6b. Segmentación: validación empírica (Control 3.6)      [requiere paso 4]
     7.  Explicabilidad SHAP
+    8.  LGD y EAD (Controles 7.5, 8.1, 8.2, 8.6)
 """
 
 import os
@@ -73,7 +75,9 @@ def main():
         (5, "Calibración PIT + Lifetime PD",          "05_calibracion_lifetime", False),
         ("5b", "Ponderación de escenarios macro",     "05b_scenario_weighting",  True),
         (6, "Validación regulatoria",                 "06_validacion",           False),
+        ("6b", "Segmentación: validación empírica (Control 3.6)", "06b_segmentacion", False),
         (7, "Explicabilidad SHAP",                    "07_explicabilidad",       False),
+        (8, "LGD y EAD (Controles 7.5, 8.1, 8.2, 8.6)", "08_lgd_ead",            False),
     ]
 
     for numero, nombre, modulo, opcional in pasos_principales:

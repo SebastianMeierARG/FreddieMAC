@@ -1,0 +1,8 @@
+parametro,valor,referencia
+Criterio primario,PD_lifetime_t / PD_lifetime_orig ≥ k (mismo horizonte residual),IFRS 9 5.5.9
+Umbral relativo k,2.5,Calibrado empíricamente (ver sicr_umbral_calibracion.csv)
+Umbral absoluto Δ,0.05,Complemento para PD de originación muy bajas
+Backstop,30 DPD,"IFRS 9 5.5.11 – presunción refutable, uso estrictamente prudencial"
+Conversión a lifetime,1 − (1 − PD_12m)^(T_res/12)  (hazard constante),Horizonte homogéneo para ambas PD
+% cartera en Stage 2 (SICR PD),0.0846,Resultado
+% del Stage 2 activado solo por el backstop,0.001,EBA GL/2017/16 §5.5 – debe ser minoritario

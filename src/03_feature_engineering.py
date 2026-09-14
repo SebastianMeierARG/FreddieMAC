@@ -7,6 +7,7 @@ mensual (dinámicas), conforme a la práctica IFRS 9.
 
 Variables generadas:
   - Comportamiento: DPD rolling, spread de tasa, amortización relativa
+  - Relativas a la cohorte de originación: rate/upb/fico/ltv_vs_cohorte, age_ratio
   - Flags binarios: modificación, diferimiento de pagos
   - ELTV: usa valor disponible cuando loan_age > 6 meses y existe AVM
 
@@ -71,6 +72,49 @@ def crear_features_upb(df: pd.DataFrame) -> pd.DataFrame:
     )
     # Clampear para evitar valores fuera de [0, 1] por redondeos
     df["amortizacion_upb"] = df["amortizacion_upb"].clip(0, 1)
+    return df
+
+
+def crear_features_relativas_cohorte(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Variables expresadas como desviación respecto de la media de la cohorte de
+    originación (mes de concesión = período de reporte − loan_age).
+
+    Motivación (EBA GL/2017/16 §5.3.1 – estabilidad de los factores de riesgo):
+    las variables de nivel absoluto (tasa nominal, UPB en USD) no son
+    estacionarias entre vintages. La tasa media de originación pasa de 3,96 %
+    en 2016-2020 a 6,74 % en 2024, de modo que la totalidad de la cartera de
+    test cae fuera del rango observado en entrenamiento. Los modelos basados en
+    árboles no extrapolan y pierden poder discriminante out-of-time. La
+    desviación respecto de la cohorte mide el mismo riesgo relativo (préstamo
+    caro/barato, grande/chico frente a sus pares) y sí es estacionaria.
+
+    Toda la información utilizada está disponible en el momento de la
+    originación del préstamo: no introduce look-ahead bias.
+    """
+    print("  Calculando variables relativas a la cohorte de originación...")
+    cohorte = (
+        df["monthly_reporting_period"].values.astype("datetime64[M]")
+        - df["loan_age"].values.astype("timedelta64[M]")
+    )
+    df["cohorte_originacion"] = cohorte.astype("datetime64[M]").astype("int32")
+
+    relativas = [
+        ("original_interest_rate", "rate_vs_cohorte"),
+        ("original_upb",           "upb_vs_cohorte"),
+        ("credit_score",           "fico_vs_cohorte"),
+        ("original_ltv",           "ltv_vs_cohorte"),
+    ]
+    for origen, destino in relativas:
+        media = df.groupby("cohorte_originacion")[origen].transform("mean")
+        df[destino] = (df[origen] - media).astype("float32")
+
+    # Madurez relativa: fracción del plazo contractual ya transcurrida
+    df["age_ratio"] = (
+        df["loan_age"] / df["original_loan_term"].replace(0, np.nan)
+    ).astype("float32")
+
+    df.drop(columns=["cohorte_originacion"], inplace=True)
     return df
 
 
@@ -183,6 +227,7 @@ def construir_dataset_modelado(panel: pd.DataFrame) -> pd.DataFrame:
     df = crear_features_rolling_dpd(df)
     df = crear_features_tasa(df)
     df = crear_features_upb(df)
+    df = crear_features_relativas_cohorte(df)
     df = crear_flags_binarios(df)
     df = tratar_eltv(df)
     df = merge_macro(df)

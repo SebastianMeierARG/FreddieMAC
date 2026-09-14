@@ -1,0 +1,10 @@
+parametro,valor,fundamento
+Período de workout máximo (meses),60,CRR art. 181.1.a – horizonte máximo observado de recuperación
+Probation period para declarar curación (meses),12,EBA GL/2016/07 §7 – mínimo 3 meses; criterio conservador 12
+LGD asignada al superar el workout máximo,1.0,NIIF 9 5.4.4 – baja del importe bruto sin expectativa razonable de recuperación
+Add-on de downturn sobre la LGD media,0.05,CRR art. 181.1.b – LGD apropiada para una recesión económica
+Tasa de descuento de las recuperaciones,Tasa de interés efectiva original del instrumento,NIIF 9 B5.5.44
+Cure rate observado,0.4767,Estimación empírica sobre episodios de default del panel
+Exposiciones con supuesto de pérdida total aplicado,58,Episodios abiertos con antigüedad superior al workout máximo
+LGD media realizada,0.2482,Media simple sobre liquidaciones con evento de default
+LGD ponderada por exposición,0.1983,Pérdida total / EAD total

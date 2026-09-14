@@ -1,0 +1,8 @@
+segmentacion,n_segmentos,n,chi2_global,gl,p_valor,V_Cramer,heterogeneo
+banda_fico,5,14478862,104215.25,4,0.0,0.0848,True
+banda_ltv,5,14481444,16071.05,4,0.0,0.0333,True
+banda_dti,5,14481471,27977.92,4,0.0,0.044,True
+proposito,3,14481471,3616.5,2,0.0,0.0158,True
+ocupacion,3,14481471,1463.53,2,0.0,0.0101,True
+canal,3,14481471,1544.62,2,0.0,0.0103,True
+tipo_prop,5,14481471,127.01,4,1.6984945458981842e-26,0.003,True

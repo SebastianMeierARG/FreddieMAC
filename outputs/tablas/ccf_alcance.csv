@@ -1,0 +1,7 @@
+tipo_exposicion,presente_en_cartera,saldo_contingente,CCF_aplicado,fundamento
+"Préstamo hipotecario cerrado, totalmente desembolsado",Sí (100 %),No,0.0,No existe importe no dispuesto: la EAD es el saldo en balance
+Compromiso revocable sin previo aviso,No,Sí,0.1,CCF regulatorio estándar; documentado para extensión del alcance
+Compromiso irrevocable con vencimiento original ≤ 1 año,No,Sí,0.2,CCF regulatorio estándar; documentado para extensión del alcance
+Compromiso irrevocable con vencimiento original > 1 año,No,Sí,0.5,CCF regulatorio estándar; documentado para extensión del alcance
+"Línea revolving no comprometida (HELOC, tarjeta)",No,Sí,0.4,CCF regulatorio estándar; documentado para extensión del alcance
+Garantía financiera / sustituto directo del crédito,No,Sí,1.0,CCF regulatorio estándar; documentado para extensión del alcance

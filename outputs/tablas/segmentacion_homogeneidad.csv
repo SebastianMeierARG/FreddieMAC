@@ -1,0 +1,30 @@
+segmentacion,segmento,var_control,n,tasa_def_min,tasa_def_max,dispersion_rel,chi2,gl,p_valor,V_Cramer,homogeneo
+banda_fico,660-699,original_ltv,1730766,0.017522,0.035376,0.2823,2821.87,3,0.0,0.0404,False
+banda_fico,700-739,original_ltv,3147083,0.009877,0.025051,0.3734,5707.05,3,0.0,0.0426,False
+banda_fico,740-779,original_ltv,4403187,0.005682,0.013285,0.3602,3674.21,3,0.0,0.0289,False
+banda_fico,780+,original_ltv,4561837,0.002349,0.005993,0.3931,2004.74,3,0.0,0.021,False
+banda_fico,<660,original_ltv,635962,0.03171,0.052408,0.2155,824.14,3,0.0,0.036,False
+banda_ltv,60-75,credit_score,2890579,0.002841,0.024577,0.9146,19519.02,3,0.0,0.0822,False
+banda_ltv,75-80,credit_score,1635100,0.004253,0.025228,0.8028,9439.85,3,0.0,0.076,False
+banda_ltv,80-90,credit_score,3683074,0.003677,0.025202,0.816,21710.2,3,0.0,0.0768,False
+banda_ltv,<=60,credit_score,2872107,0.001958,0.017792,0.9865,15432.08,3,0.0,0.0733,False
+banda_ltv,>90,credit_score,3397975,0.006531,0.03486,0.6882,22091.95,3,0.0,0.0806,False
+banda_dti,30-36,credit_score,2606040,0.002947,0.022268,0.8739,14834.55,3,0.0,0.0754,False
+banda_dti,36-43,credit_score,3692530,0.004321,0.028791,0.7593,22917.97,3,0.0,0.0788,False
+banda_dti,<=30,credit_score,4027807,0.001713,0.014255,1.021,18000.58,3,0.0,0.0669,False
+banda_dti,>43,credit_score,3817591,0.006893,0.032781,0.6291,20698.78,3,0.0,0.0736,False
+banda_dti,sin_dato,credit_score,334894,0.00804,0.034133,0.6384,1908.29,3,0.0,0.0755,False
+proposito,C (refi cash-out),credit_score,3020137,0.00488,0.028237,0.7346,17192.64,3,0.0,0.0754,False
+proposito,N (refi no cash-out),credit_score,3573903,0.002505,0.020568,0.8728,18896.78,3,0.0,0.0727,False
+proposito,P (compra),credit_score,7884822,0.003574,0.027945,0.8498,55058.25,3,0.0,0.0836,False
+ocupacion,I (inversión),credit_score,1171671,0.004696,0.020334,0.6687,4138.62,3,0.0,0.0594,False
+ocupacion,P (primaria),credit_score,12793231,0.003424,0.026713,0.8262,82314.95,3,0.0,0.0802,False
+ocupacion,S (segunda vivienda),credit_score,513960,0.002609,0.015984,0.8407,1956.6,3,0.0,0.0617,False
+canal,B (broker),credit_score,1603162,0.003715,0.027086,0.7938,9779.35,3,0.0,0.0781,False
+canal,C (correspondent),credit_score,4511162,0.003825,0.030036,0.8635,34875.19,3,0.0,0.0879,False
+canal,R (retail),credit_score,8364538,0.003261,0.023914,0.8177,46990.49,3,0.0,0.075,False
+tipo_prop,CO (condominio),credit_score,1203064,0.003474,0.024984,0.8086,6904.67,3,0.0,0.0758,False
+tipo_prop,CP (cooperativa),credit_score,28334,0.00339,0.016072,0.6673,94.9,3,0.0,0.0579,False
+tipo_prop,MH (manufacturada),credit_score,85554,0.004324,0.026322,0.7901,499.15,3,0.0,0.0764,False
+tipo_prop,PU (PUD),credit_score,3854920,0.003055,0.027271,0.9237,29208.55,3,0.0,0.087,False
+tipo_prop,SF (unifamiliar),credit_score,9306990,0.003716,0.025791,0.793,54391.58,3,0.0,0.0764,False

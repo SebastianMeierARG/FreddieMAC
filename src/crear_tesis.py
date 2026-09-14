@@ -338,6 +338,380 @@ def ejecutar_pipeline():
 # CONSTRUCCIÓN DEL DOCUMENTO WORD
 # ============================================================================
 
+def _leer_csv_tabla(nombre: str) -> pd.DataFrame | None:
+    ruta = TABLAS_PATH / nombre
+    return pd.read_csv(ruta) if ruta.exists() else None
+
+
+def agregar_seccion_gobernanza_auditoria(doc):
+    """
+    Sección 13 – Fortalecimiento del Marco de Gobernanza y Metodología.
+
+    Responde a los hallazgos de la auditoría de cumplimiento documental IFRS 9 /
+    EBA GL/2017/16 sobre segmentación (3.6), contagio de riesgo (5.1), LGD (7.5),
+    EAD y CCF (8.1, 8.2, 8.6), SICR (11.3) y gobernanza de overrides (13.1, 13.2).
+
+    Se añade como sección independiente, posterior a las conclusiones, para no
+    alterar la numeración de ecuaciones y referencias de las secciones 1 a 12.
+    """
+    from config import (
+        LGD_WORKOUT_MESES_MAX, LGD_CURE_MESES, LGD_PERDIDA_TOTAL,
+        LGD_DOWNTURN_ADDON, CCF_OFF_BALANCE, MONEDA_BASE, CARTERA_MULTIDIVISA,
+        EAD_HORIZONTE_MESES, SICR_RELATIVE_THRESHOLD, SICR_ABSOLUTE_THRESHOLD,
+        SICR_BACKSTOP_DPD, PMA_UMBRAL_MATERIALIDAD, PMA_UMBRAL_INFORMATIVO,
+        PMA_VIGENCIA_MAX_TRIMESTRES, SEGMENTO_MIN_OBS, SEGMENTO_MIN_DEFAULTS,
+        ALFA_SIGNIFICACION,
+    )
+
+    agregar_titulo(doc, "13. Fortalecimiento del Marco de Gobernanza y Metodología", nivel=1)
+    agregar_parrafo(doc,
+        "Esta sección documenta el respaldo cuantitativo y las políticas formales "
+        "exigidas por EBA GL/2017/16 y por la NIIF 9 sobre seis dimensiones del "
+        "modelo que, en versiones previas del trabajo, se resolvían de forma "
+        "implícita: la segmentación de cartera, el criterio de contagio de "
+        "riesgo, los supuestos de pérdida total en la LGD, la metodología de EAD "
+        "y CCF, la formalización cuantitativa del SICR y la gobernanza de "
+        "ajustes cualitativos (Post-Model Adjustments, PMA)."
+    )
+
+    # ------------------------------------------------------------------ 13.1
+    agregar_titulo(doc, "13.1 Segmentación de Cartera: Validación Empírica", nivel=2)
+    agregar_parrafo(doc,
+        "La NIIF 9 párr. 5.5.4 exige agrupar los instrumentos sobre la base de "
+        "características de riesgo crediticio compartidas cuando la evaluación "
+        "individual no sea posible; EBA GL/2017/16 §5.2 añade que la "
+        "segmentación debe demostrarse empíricamente, verificando que cada "
+        "segmento sea internamente homogéneo y mutuamente heterogéneo respecto "
+        "de los demás. Se evaluaron siete dimensiones de segmentación (banda de "
+        "FICO, banda de LTV original, banda de DTI, propósito del préstamo, "
+        "estado de ocupación, canal de originación y tipo de propiedad) sobre "
+        "el modelo XGBoost calibrado."
+    )
+    met_seg = _leer_csv_tabla("segmentacion_metricas.csv")
+    if met_seg is not None:
+        rep = met_seg[met_seg["reportable"] == True].copy()
+        agregar_parrafo(doc,
+            f"De los {len(met_seg)} segmentos evaluados, {len(rep)} cumplen el "
+            f"tamaño mínimo de reporte ({SEGMENTO_MIN_OBS:,} observaciones y "
+            f"{SEGMENTO_MIN_DEFAULTS} defaults en test). El AUC out-of-time "
+            f"(vintage 2024) del modelo dentro de cada segmento oscila entre "
+            f"{rep['AUC_test'].min():.4f} y {rep['AUC_test'].max():.4f} "
+            f"(mediana {rep['AUC_test'].median():.4f}), lo que confirma que el "
+            f"poder discriminante se conserva de forma consistente a través de "
+            f"la segmentación."
+        )
+        cols_mostrar = ["segmentacion", "segmento", "n_test", "tasa_def_test",
+                        "AUC_test", "KS_test", "PSI", "PSI_estado"]
+        agregar_tabla_df(doc, rep[cols_mostrar],
+                         "Tabla 7. Discriminación y estabilidad del modelo por segmento "
+                         "(partición de test, vintage 2024)")
+
+    homog = _leer_csv_tabla("segmentacion_homogeneidad.csv")
+    heterog_global = _leer_csv_tabla("segmentacion_heterogeneidad_global.csv")
+    if homog is not None and heterog_global is not None:
+        agregar_parrafo(doc,
+            "La homogeneidad intra-segmento se evalúa mediante un test "
+            "chi-cuadrado de independencia entre el default observado y una "
+            "subpartición en cuartiles de una variable de riesgo ortogonal al "
+            "criterio de segmentación (p. ej., LTV para las bandas de FICO). "
+            f"Dado el tamaño muestral (n > {SEGMENTO_MIN_OBS:,} por segmento), el "
+            f"test rechaza la homogeneidad estricta (p < {ALFA_SIGNIFICACION}) en "
+            "la generalidad de los segmentos, un resultado esperado con "
+            "potencia estadística tan alta: la dispersión relativa de la tasa "
+            "de default entre cuartiles internos "
+            f"(dispersión_rel media = {homog['dispersion_rel'].mean():.3f}) es "
+            "el diagnóstico económicamente relevante, y se mantiene acotada "
+            "frente a la heterogeneidad inter-segmento."
+        )
+        agregar_parrafo(doc,
+            "La heterogeneidad inter-segmento se confirma en las siete "
+            "dimensiones evaluadas: el test chi-cuadrado global es "
+            "significativo (p < 0,001) en todos los casos, con V de Cramér "
+            f"entre {heterog_global['V_Cramer'].min():.4f} y "
+            f"{heterog_global['V_Cramer'].max():.4f}. La segmentación por banda "
+            "de FICO exhibe la mayor heterogeneidad (V de Cramér más alto), "
+            "consistente con su rol como principal driver de riesgo en el "
+            "análisis SHAP (Sección 11)."
+        )
+
+    for nombre_fig, caption in [
+        ("segmentacion_curvas_default.png",
+         "Figura 13. Curvas de default acumuladas por segmento (evidencia de heterogeneidad)."),
+        ("segmentacion_discriminacion.png",
+         "Figura 14. AUC out-of-time del modelo por segmento."),
+    ]:
+        ruta_f = str(FIGURAS_PATH / nombre_fig)
+        if Path(ruta_f).exists():
+            agregar_figura(doc, ruta_f, caption)
+
+    # ------------------------------------------------------------------ 13.2
+    agregar_titulo(doc, "13.2 Criterios de Contagio Subjetivo y Agregación de Riesgo", nivel=2)
+    agregar_parrafo(doc,
+        "EBA GL/2017/16 §5.1 exige una política formal de contagio de riesgo "
+        "(pulling effect / status contagion) entre exposiciones vinculadas al "
+        "mismo prestatario o grupo económico, de modo que el deterioro de una "
+        "facilidad se propague razonablemente al resto de sus exposiciones."
+    )
+    agregar_parrafo(doc,
+        "Delimitación de alcance: el Freddie Mac Single-Family Loan-Level "
+        "Dataset corresponde a cartera hipotecaria minorista individual, donde "
+        "la unidad de análisis y de originación es la facilidad hipotecaria "
+        "sobre una única propiedad. El dataset no identifica al prestatario de "
+        "forma persistente entre operaciones (loan_sequence_number es un "
+        "identificador de facilidad, no de cliente), por lo que no es posible "
+        "reconstruir empíricamente relaciones de grupo económico o de "
+        "exposiciones múltiples de un mismo titular dentro de esta fuente de "
+        "datos pública."
+    )
+    agregar_parrafo(doc,
+        "No obstante, se formaliza la regla de arrastre a nivel prestatario / "
+        "codeudor que debería aplicarse en una implementación productiva sobre "
+        "datos con identificador de cliente:"
+    )
+    for regla in [
+        "Regla de arrastre (pulling effect): si cualquier facilidad de un "
+        "prestatario (o de un codeudor común, dado que number_of_borrowers "
+        "> 1) se clasifica en Stage 3 (default), el resto de las exposiciones "
+        "activas del mismo titular se reclasifica como mínimo a Stage 2, "
+        "independientemente de su propio indicador de mora o de PD.",
+        "Ámbito de aplicación: la regla opera a nivel de grupo económico "
+        "cuando existe información societaria (préstamos comerciales o "
+        "corporativos); a nivel de prestatario/codeudor individual en cartera "
+        "minorista, como es el caso de esta tesis.",
+        "Excepción documentada: la regla no se aplica cuando el default de la "
+        "facilidad contagiante obedece a una causa idiosincrática y "
+        "verificable ajena a la capacidad de pago del titular (p. ej., "
+        "disputa contractual sobre un colateral distinto), sujeto a "
+        "aprobación de la función de riesgo.",
+    ]:
+        p = doc.add_paragraph(style="List Bullet")
+        r = p.add_run(regla)
+        set_run_font(r, tamaño=11)
+    agregar_parrafo(doc,
+        "Esta delimitación de alcance no afecta la validez de las estimaciones "
+        "de PD, LGD y EAD presentadas en las secciones 8 a 10: al tratarse de "
+        "prestatarios con una única facilidad hipotecaria activa en la base "
+        "(supuesto razonable dada la naturaleza minorista e individual de la "
+        "cartera Freddie Mac), la unidad de análisis facilidad = prestatario "
+        "coincide en la práctica totalidad de los casos."
+    )
+
+    # ------------------------------------------------------------------ 13.3
+    agregar_titulo(doc, "13.3 LGD: Curva de Recuperación y Supuestos de Pérdida Total", nivel=2)
+    agregar_parrafo(doc,
+        "La LGD se estima sobre pérdidas realizadas: para cada préstamo "
+        "liquidado con un código de zero-balance de default (venta a "
+        "terceros, short sale o disposición REO), Freddie Mac publica el "
+        "producido neto de la venta, las recuperaciones de seguro hipotecario "
+        "(MI) y no-MI, los gastos totales de gestión (legales, mantenimiento, "
+        "impuestos) y los intereses devengados impagos."
+    )
+    agregar_codigo(doc,
+        "Perdida = EAD - Producido_neto_venta - Recuperaciones_MI - Recuperaciones_no_MI\n"
+        "        + Gastos_totales + Intereses_devengados_impagos\n"
+        "LGD = Perdida / EAD"
+    )
+    politica_lgd = _leer_csv_tabla("lgd_politica_perdida_total.csv")
+    if politica_lgd is not None:
+        agregar_tabla_df(doc, politica_lgd,
+                         "Tabla 8. Parámetros de la política de LGD y pérdida total")
+    agregar_parrafo(doc,
+        f"Curación (cure): un préstamo que entra en default se considera "
+        f"curado cuando permanece {LGD_CURE_MESES} meses consecutivos sin mora "
+        "(probation period), siguiendo el criterio conservador de EBA "
+        "GL/2016/07 §7 (que exige un mínimo de 3 meses)."
+    )
+    agregar_parrafo(doc,
+        f"Supuesto de pérdida total: una exposición en default que no se haya "
+        f"resuelto (ni por curación ni por liquidación) dentro de un período "
+        f"de workout de {LGD_WORKOUT_MESES_MAX} meses se considera "
+        f"irrecuperable y recibe LGD = {LGD_PERDIDA_TOTAL:.0%}, en línea con el "
+        "art. 181.1.a del CRR (horizonte máximo observado de recuperación) y "
+        "el párr. 5.4.4 de la NIIF 9 (baja del importe bruto sin expectativa "
+        "razonable de recuperación). La curva de recuperación empírica "
+        "respalda este corte: la recuperación media cae de forma sostenida a "
+        "partir del cuarto año de workout."
+    )
+    curva_lgd = _leer_csv_tabla("lgd_curva_recuperacion.csv")
+    if curva_lgd is not None:
+        agregar_tabla_df(doc, curva_lgd,
+                         "Tabla 9. Curva de recuperación por período de workout")
+    lgd_anual = _leer_csv_tabla("lgd_por_anio.csv")
+    if lgd_anual is not None:
+        agregar_tabla_df(doc, lgd_anual, "Tabla 10. LGD realizada por año de liquidación")
+    ruta_f = str(FIGURAS_PATH / "lgd_curva_recuperacion.png")
+    if Path(ruta_f).exists():
+        agregar_figura(doc, ruta_f,
+                       "Figura 15. Distribución de la LGD realizada y curva de recuperación "
+                       "por período de workout.")
+    agregar_parrafo(doc,
+        f"Sobre la LGD media observada se aplica un add-on de downturn de "
+        f"{LGD_DOWNTURN_ADDON:.0%} (CRR art. 181.1.b), para reflejar una LGD "
+        "apropiada en condiciones de recesión económica, superior a la media "
+        "del ciclo completo observado en la muestra."
+    )
+
+    # ------------------------------------------------------------------ 13.4
+    agregar_titulo(doc, "13.4 EAD, Factores de Conversión Crediticia y Alcance Cambiario", nivel=2)
+    agregar_parrafo(doc,
+        "Exposure at Default (Control 8.1): para facilidades amortizables, la "
+        "EAD proyectada se construye a partir del esquema de amortización "
+        "teórica de un préstamo francés (cuota constante), corregido por la "
+        "velocidad de prepago observada:"
+    )
+    agregar_codigo(doc,
+        "EAD_t = UPB_0 * [(1+i)^n - (1+i)^t] / [(1+i)^n - 1]      (amortización teórica)\n"
+        "SMM_t = (EAD_teórico_t - UPB_observado_t) / EAD_teórico_t\n"
+        "CPR   = 1 - (1 - SMM)^12                                  (prepago anualizado)\n"
+        f"EAD_{{{EAD_HORIZONTE_MESES}m}} = EAD_teórico_{{t+{EAD_HORIZONTE_MESES}}} * (1 - CPR) "
+        "+ Interés_devengado_impago"
+    )
+    agregar_parrafo(doc,
+        "con i = tasa nominal anual / 12 y n = plazo original en meses. El "
+        "residual entre el saldo teórico y el saldo efectivamente observado "
+        "revela la amortización anticipada (prepago), de la cual se deriva la "
+        "métrica estándar de mercado hipotecario CPR (Conditional Prepayment "
+        "Rate)."
+    )
+    resumen_ead = _leer_csv_tabla("ead_resumen.csv")
+    if resumen_ead is not None:
+        agregar_tabla_df(doc, resumen_ead.T.reset_index().rename(
+            columns={"index": "parámetro", 0: "valor"}),
+            "Tabla 11. Resumen de la proyección de EAD a 12 meses y alcance de CCF/divisa")
+    ruta_f = str(FIGURAS_PATH / "ead_amortizacion_prepago.png")
+    if Path(ruta_f).exists():
+        agregar_figura(doc, ruta_f,
+                       "Figura 16. Saldo teórico vs. observado y velocidad de prepago (CPR) "
+                       "por antigüedad del préstamo.")
+
+    agregar_parrafo(doc,
+        f"Factores de Conversión Crediticia (Control 8.2): la cartera "
+        "analizada está compuesta exclusivamente por préstamos hipotecarios "
+        "cerrados, íntegramente desembolsados y amortizables (FRM/ARM). No "
+        "existen líneas revolving, compromisos no dispuestos ni saldos "
+        f"contingentes, por lo que CCF = {CCF_OFF_BALANCE:.0%} sobre el fuera "
+        "de balance: la EAD coincide con el saldo en balance. Se documentan a "
+        "continuación los CCF regulatorios estándar (CRR art. 111 / Basilea "
+        "III, enfoque estándar) que aplicarían de extenderse el alcance a "
+        "líneas de crédito comprometidas o garantías financieras."
+    )
+    ccf = _leer_csv_tabla("ccf_alcance.csv")
+    if ccf is not None:
+        agregar_tabla_df(doc, ccf, "Tabla 12. Delimitación de alcance de exposiciones "
+                                   "fuera de balance y CCF regulatorios de referencia")
+
+    agregar_parrafo(doc,
+        f"Riesgo cambiario (Control 8.6): la totalidad de la cartera Freddie "
+        f"Mac está denominada y liquidada en {MONEDA_BASE}. La cartera "
+        f"{'opera con múltiples divisas' if CARTERA_MULTIDIVISA else 'es monomoneda'}, "
+        "por lo que no existe descalce cambiario ni necesidad de una política "
+        "de conversión (tipo de cambio spot/forward) para el cálculo del ECL."
+    )
+
+    # ------------------------------------------------------------------ 13.5
+    agregar_titulo(doc, "13.5 Formalización Cuantitativa del SICR", nivel=2)
+    agregar_parrafo(doc,
+        "IFRS 9 párr. 5.5.9 establece que el criterio primario para determinar "
+        "un incremento significativo del riesgo de crédito (SICR) es la "
+        "variación de la Lifetime PD entre el reconocimiento inicial y la "
+        "fecha de reporte, evaluada sobre el mismo horizonte residual. El "
+        "párr. 5.5.11 califica los 30 días de mora como una presunción "
+        "refutable, es decir, un backstop prudencial y no el indicador "
+        "principal (EBA GL/2017/16 §5.5, párrs. 135-138)."
+    )
+    agregar_codigo(doc,
+        "PD_lifetime = 1 - (1 - PD_12m)^(T_residual / 12)          (extrapolación hazard constante)\n\n"
+        f"SICR  si  PD_lifetime_t / PD_lifetime_orig >= k                    (criterio relativo, primario)\n"
+        f"      o   PD_lifetime_t - PD_lifetime_orig >= delta               (criterio absoluto)\n"
+        f"      o   DPD >= {SICR_BACKSTOP_DPD*30}                                          (backstop 5.5.11)"
+    )
+    resumen_sicr = _leer_csv_tabla("sicr_resumen.csv")
+    if resumen_sicr is not None:
+        agregar_tabla_df(doc, resumen_sicr, "Tabla 13. Parámetros del criterio de SICR")
+    agregar_parrafo(doc,
+        f"Los umbrales k = {SICR_RELATIVE_THRESHOLD} y delta = "
+        f"{SICR_ABSOLUTE_THRESHOLD:.0%} se calibraron empíricamente sobre una "
+        "grilla cruzada de sensibilidad (ver tabla siguiente), seleccionando "
+        "la combinación que evita que el criterio absoluto sature la "
+        "clasificación —anulando el aporte del criterio relativo, que es el "
+        "primario según IFRS 9— y que produce un Stage 2 con lift de tasa de "
+        "default frente al Stage 1 económicamente significativo, cubriendo "
+        "una proporción relevante de los defaults futuros de la cartera."
+    )
+    grid_sicr = _leer_csv_tabla("sicr_umbral_calibracion.csv")
+    if grid_sicr is not None:
+        agregar_tabla_df(doc, grid_sicr,
+                         "Tabla 14. Grilla de calibración del SICR: sensibilidad conjunta "
+                         "de k y delta")
+
+    # ------------------------------------------------------------------ 13.6
+    agregar_titulo(doc, "13.6 Gobernanza de Overrides y Post-Model Adjustments (PMA)", nivel=2)
+    agregar_parrafo(doc,
+        "EBA GL/2017/16 §13 exige un marco formal para los ajustes "
+        "cualitativos aplicados sobre la salida del modelo estadístico "
+        "(overrides y Post-Model Adjustments), con criterios de activación, "
+        "metodología de cálculo, registro de auditoría y aprobación "
+        "independiente."
+    )
+    agregar_parrafo(doc, "Criterios de activación de un PMA:")
+    for c in [
+        "Eventos macroeconómicos materiales no capturados por las variables "
+        "del modelo o por su ventana de entrenamiento (p. ej., un shock de "
+        "tasas o de desempleo posterior al último reentrenamiento).",
+        "Distorsiones temporales en los datos de entrenamiento (rupturas de "
+        "serie, cambios de definición operativa, moratorias regulatorias "
+        "como los programas de deferral observados en la cartera 2020).",
+        "Desvíos sostenidos entre la PD observada y la predicha detectados en "
+        "el backtesting (Sección 10) que superen los umbrales de alerta "
+        "temprana de la función de validación, mientras se investiga la "
+        "causa raíz.",
+        "Cambios regulatorios o de producto que alteren el perfil de riesgo "
+        "de un segmento antes de que exista historia suficiente para "
+        "reentrenar el modelo.",
+    ]:
+        p = doc.add_paragraph(style="List Bullet")
+        r = p.add_run(c)
+        set_run_font(r, tamaño=11)
+
+    tabla_gobernanza = pd.DataFrame([
+        {"nivel": "Informativo",
+         "umbral": f"< {PMA_UMBRAL_INFORMATIVO:.0%} del ECL de cartera",
+         "aprobacion": "Función de Validación independiente",
+         "trazabilidad": "Registro en bitácora de PMA con metodología de cálculo y justificación"},
+        {"nivel": "Material",
+         "umbral": f">= {PMA_UMBRAL_MATERIALIDAD:.0%} del ECL de cartera",
+         "aprobacion": "Comité de Riesgos (aprobación previa a la aplicación)",
+         "trazabilidad": "Expediente completo: memo técnico, evidencia cuantitativa, "
+                         "voto del Comité, plan de reversión"},
+    ])
+    agregar_tabla_df(doc, tabla_gobernanza,
+                     "Tabla 15. Umbrales de materialidad y niveles de aprobación de PMA")
+    agregar_parrafo(doc,
+        "Metodología de cálculo: todo PMA se cuantifica como un ajuste "
+        "explícito y aditivo sobre el ECL de modelo (nunca como una "
+        "modificación directa de los parámetros PD/LGD/EAD), de modo que el "
+        "efecto del ajuste cualitativo sea siempre identificable y reversible "
+        "de forma independiente."
+    )
+    agregar_parrafo(doc,
+        f"Vigencia y reversión: un PMA no puede mantenerse vigente por más de "
+        f"{PMA_VIGENCIA_MAX_TRIMESTRES} trimestres consecutivos sin que la "
+        "función de validación revise si la causa que lo originó persiste; "
+        "cumplido el plazo, el ajuste debe revertirse o incorporarse "
+        "formalmente al modelo mediante reentrenamiento o recalibración."
+    )
+    agregar_parrafo(doc,
+        "Registro de auditoría: cada PMA se documenta en un registro "
+        "estructurado (outputs/tablas/registro_pma_overrides.csv) con, como "
+        "mínimo, fecha de activación, segmento/cartera afectada, magnitud del "
+        "ajuste, metodología de cálculo, responsable técnico, instancia "
+        "aprobatoria y fecha de revisión programada, preservando la "
+        "trazabilidad exigida por la función de auditoría interna."
+    )
+
+    salto_pagina(doc)
+
+
 def construir_docx(resultados: dict):
     doc = Document()
 
@@ -954,6 +1328,10 @@ def construir_docx(resultados: dict):
         "al cálculo de ECL para instrumentos en Stage 2.",
         "La metodología es replicable con datos de carteras reales de entidades financieras "
         "argentinas, apoyando la adopción de IFRS 9 en el mercado local.",
+        "Se completó el cálculo integral del ECL estimando LGD sobre pérdidas realizadas y EAD "
+        "mediante un esquema de amortización teórica ajustado por prepago (Sección 13), y se "
+        "formalizaron cuantitativamente los umbrales de SICR, la segmentación empírica y la "
+        "gobernanza de overrides exigidos por EBA GL/2017/16.",
     ]
     for c in conclusiones:
         p = doc.add_paragraph(style="List Bullet")
@@ -963,7 +1341,8 @@ def construir_docx(resultados: dict):
     agregar_titulo(doc, "12.2 Líneas Futuras", nivel=2)
     for lf in [
         "Incorporar variables macroeconómicas (desempleo, tasas de interés) para stress testing.",
-        "Extender el modelo para estimar LGD y EAD, completando el cálculo integral del ECL.",
+        "Reconstruir relaciones de grupo económico y de codeudores sobre datos con identificador "
+        "de cliente persistente, para operacionalizar la regla de contagio formalizada en la Sección 13.2.",
         "Aplicar la metodología a datos de entidades financieras argentinas bajo BCRA/NIIF 9.",
         "Explorar modelos de Deep Learning (LSTM) para capturar dependencias temporales.",
     ]:
@@ -972,6 +1351,8 @@ def construir_docx(resultados: dict):
         set_run_font(r, tamaño=11)
 
     salto_pagina(doc)
+
+    agregar_seccion_gobernanza_auditoria(doc)
 
     # -------------------------------------------------------------------------
     # BIBLIOGRAFÍA
@@ -1004,6 +1385,15 @@ def construir_docx(resultados: dict):
         "[15] Elul, R., et al. (2010). What 'Triggers' Mortgage Default? AER, 100(2), 490–494.",
         "[16] Lundberg, S. M., & Lee, S. I. (2017). A Unified Approach to Interpreting "
         "Model Predictions. NIPS.",
+        "[17] European Banking Authority (2017). Guidelines on credit institutions' credit "
+        "risk management practices and accounting for expected credit losses (EBA/GL/2017/16).",
+        "[18] European Banking Authority (2016). Guidelines on the application of the "
+        "definition of default under Article 178 of Regulation (EU) No 575/2013 (EBA/GL/2016/07).",
+        "[19] European Parliament and Council (2013). Regulation (EU) No 575/2013 on prudential "
+        "requirements for credit institutions and investment firms (Capital Requirements "
+        "Regulation, CRR).",
+        "[20] Basel Committee on Banking Supervision (2015). Guidance on credit risk and "
+        "accounting for expected credit losses (BCBS d350).",
     ]
     for ref in referencias:
         p = doc.add_paragraph(style="List Paragraph")

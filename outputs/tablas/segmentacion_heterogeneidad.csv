@@ -1,0 +1,23 @@
+segmentacion,segmento_a,segmento_b,tasa_def_a,tasa_def_b,ratio_b_a,z,p_valor,difieren
+banda_fico,780+,740-779,0.003814,0.008488,2.226,-89.782,0.0,True
+banda_fico,740-779,700-739,0.008488,0.016368,1.928,-98.982,0.0,True
+banda_fico,700-739,660-699,0.016368,0.025841,1.579,-71.979,0.0,True
+banda_fico,660-699,<660,0.025841,0.040155,1.554,-57.514,0.0,True
+banda_ltv,<=60,60-75,0.007337,0.010752,1.465,-43.284,0.0,True
+banda_ltv,60-75,80-90,0.010752,0.011815,1.099,-12.769,0.0,True
+banda_ltv,80-90,75-80,0.011815,0.011821,1.001,-0.061,0.9516210284044828,False
+banda_ltv,75-80,>90,0.011821,0.018112,1.532,-52.572,0.0,True
+banda_dti,<=30,30-36,0.005767,0.009948,1.725,-61.338,0.0,True
+banda_dti,30-36,36-43,0.009948,0.0142,1.427,-47.426,0.0,True
+banda_dti,36-43,>43,0.0142,0.018025,1.269,-41.581,0.0,True
+banda_dti,>43,sin_dato,0.018025,0.018352,1.018,-1.362,0.17326917156440813,False
+proposito,N (refi no cash-out),P (compra),0.00928,0.012808,1.38,-51.442,0.0,True
+proposito,P (compra),C (refi cash-out),0.012808,0.014034,1.096,-15.91,0.0,True
+ocupacion,S (segunda vivienda),I (inversión),0.00722,0.010511,1.456,-20.265,0.0,True
+ocupacion,I (inversión),P (primaria),0.010511,0.012547,1.194,-19.082,0.0,True
+canal,R (retail),B (broker),0.011242,0.012938,1.151,-18.435,0.0,True
+canal,B (broker),C (correspondent),0.012938,0.013693,1.058,-7.118,1.0942358130705543e-12,True
+tipo_prop,CP (cooperativa),CO (condominio),0.009953,0.011659,1.171,-2.649,0.00807760926936818,True
+tipo_prop,CO (condominio),PU (PUD),0.011659,0.011816,1.014,-1.397,0.1623635724852912,False
+tipo_prop,PU (PUD),SF (unifamiliar),0.011816,0.012423,1.051,-9.109,0.0,True
+tipo_prop,SF (unifamiliar),MH (manufacturada),0.012423,0.012424,1.0,-0.003,0.9977519135218198,False

@@ -232,14 +232,14 @@ def backtesting_transiciones() -> tuple:
     s1_to_s3 = float(matriz.loc[1, 3]) if (1 in matriz.index and 3 in matriz.columns) else np.nan
     cure_rate = float(matriz.loc[2, 1]) if (2 in matriz.index and 1 in matriz.columns) else np.nan
 
-    print("  Matriz de transición trimestral (Stage t → Stage t+3m):")
+    print("  Matriz de transición trimestral (Stage t -> Stage t+3m):")
     print(matriz.round(4).to_string())
     if not np.isnan(s1_to_s3):
-        print(f"\n  Stage 1→3 directo (sin pasar por Stage 2): {s1_to_s3:.4%}")
+        print(f"\n  Stage 1->3 directo (sin pasar por Stage 2): {s1_to_s3:.4%}")
         if s1_to_s3 > 0.01:
             print("    AVISO: tasa alta – el SICR puede no estar capturando deterioro temprano")
     if not np.isnan(cure_rate):
-        print(f"  Cure rate trimestral (Stage 2→1): {cure_rate:.4%}")
+        print(f"  Cure rate trimestral (Stage 2->1): {cure_rate:.4%}")
 
     # Cure rate anual (por año del período de reporte)
     panel_s2 = panel[panel["ifrs9_stage"] == 2].copy()

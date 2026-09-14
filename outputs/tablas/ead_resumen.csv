@@ -1,0 +1,2 @@
+moneda_base,cartera_multidivisa,horizonte_meses,n_exposiciones_vivas,upb_actual_medio,upb_teorico_12m_medio,cpr_anual_media,interes_devengado_medio,ead_proyectada_media,ead_sobre_upb_actual,ccf_off_balance,error_medio_amortizacion_pct
+USD,False,12,14424701,229359.81,227892.65,0.0086,2525.81,228450.38,0.996,0.0,3.529

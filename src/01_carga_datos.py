@@ -93,11 +93,33 @@ def cargar_originacion() -> pd.DataFrame:
     return orig
 
 
+def normalizar_zero_balance_code(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    zero_balance_code debe quedar como código de 2 dígitos con cero a la
+    izquierda (ej. "02", "03", "09"), que es el formato que espera
+    ZERO_BALANCE_DEFAULT en config.py. Algunos parquets crudos lo traen como
+    float (ej. 2.0) por inferencia de tipo aguas arriba, lo que rompe
+    silenciosamente el filtro zero_balance_code.isin({"02","03","09"}) en
+    02_definicion_default.py (astype(str) de un float da "2.0", no "02").
+    """
+    if "zero_balance_code" in df.columns:
+        col = df["zero_balance_code"]
+        if pd.api.types.is_numeric_dtype(col):
+            df["zero_balance_code"] = (
+                col.round().astype("Int64").astype(str)
+                .str.zfill(2).replace("<NA>", np.nan)
+            )
+        else:
+            df["zero_balance_code"] = col.astype(str).str.strip().str.zfill(2)
+    return df
+
+
 def cargar_performance() -> pd.DataFrame:
     """Carga y prepara el dataset de performance mensual."""
     print("  Cargando performance...")
     svcg = pd.read_parquet(SVCG_PARQUET)
     svcg = normalizar_columnas(svcg)
+    svcg = normalizar_zero_balance_code(svcg)
     print(f"    Filas: {len(svcg):,} | Columnas: {svcg.shape[1]}")
 
     # Parsear fechas
