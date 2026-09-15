@@ -2,7 +2,7 @@
 
 **Purpose:** the formatting blueprint for generating every future version of `Tesis_Meier_IFRS9_APA_vN.docx`. Read this before writing or editing any `src/generar_vN.py` script.
 
-**Source of the APA rules below:** `APA rules for thesis.pdf` — the APA Style 7th Edition *Student Paper Setup Guide* (19 pp.). Its title-page rules (course number, instructor name, due date) target a coursework paper, not a professional thesis cover — see §1.3 for how that distinction is resolved here. Its text/heading/table/figure/reference rules are edition-general and apply throughout the document without modification.
+**Source of the APA rules below:** `APA rules for thesis.pdf`, the APA Style 7th Edition *Student Paper Setup Guide* (19 pp.). Its title-page rules (course number, instructor name, due date) target a coursework paper, not a professional thesis cover; see §1.3 for how that distinction is resolved here. Its text/heading/table/figure/reference rules are edition-general and apply throughout the document without modification.
 
 ---
 
@@ -13,23 +13,23 @@ The **current highest-version file is always the visual source of truth**: as of
 
 - Fonts (Times New Roman, 12 pt body), margins, and the cover page layout (title, author, university, degree, date block).
 - The Word style definitions for `Heading 1`–`Heading 5`, `Normal`, and any custom styles already present in the template.
-- Chapters 1–4 (Fundamentación, Estado del Arte, Marco Teórico, Materiales y Métodos) and `Referencias` — these are **never regenerated**, only chapters from "5. Descripción del Dataset…" onward are replaced.
+- Chapters 1–4 (Fundamentación, Estado del Arte, Marco Teórico, Materiales y Métodos) and `Referencias`. These are **never regenerated**; only chapters from "5. Descripción del Dataset…" onward are replaced.
 
 ### 1.1a Mandatory core chapters (never trim, never drop)
-This thesis has two research objectives — see `IFRS9_COMPLIANCE_SPEC.md` header — and every regenerated version must give both full-chapter treatment:
+This thesis has two research objectives (see `IFRS9_COMPLIANCE_SPEC.md` header), and every regenerated version must give both full-chapter treatment:
 
 1. Building an IFRS 9–compliant PD/LGD/EAD pipeline (chapters 5–16, 18).
-2. **Quantifying the cost of that compliance**: Chapter 17, "El Costo de la Regulación: Scorecard WoE vs. Machine Learning sin Restricciones" — the comparative ECL analysis between the WoE-constrained scorecard and the unrestricted XGBoost/Random Forest models, backed by `src/09_woe_vs_ml.py` and detailed in `IFRS9_COMPLIANCE_SPEC.md` §3.10.
+2. **Quantifying the cost of that compliance**: Chapter 17, "El Costo de la Regulación: Scorecard WoE vs. Machine Learning sin Restricciones," the comparative ECL analysis between the WoE-constrained scorecard, the IFRS 9–disciplined ML models, and the fully unrestricted ML models, backed by `src/09_woe_vs_ml.py` and detailed in `IFRS9_COMPLIANCE_SPEC.md` §3.10.
 
-Chapter 17 (all four subsections, §17.1–§17.4) is **not optional content tied to a single audit control** — it must be reproduced in full, from live data, in every future `src/generar_v{N}.py`, exactly like any other core chapter. A regeneration that summarizes, shortens, or omits it is a defect, even if every regulatory control in §2 of the compliance spec is still satisfied without it.
+Chapter 17 (all four subsections, §17.1–§17.4) is **not optional content tied to a single audit control**; it must be reproduced in full, from live data, in every future `src/generar_v{N}.py`, exactly like any other core chapter. A regeneration that summarizes, shortens, or omits it is a defect, even if every regulatory control in §2 of the compliance spec is still satisfied without it. This includes keeping the fully unrestricted ML family (no monotonicity constraints, full feature freedom) as a distinct model tier: reusing the IFRS 9–disciplined champion model as a stand-in for "unrestricted ML" is also a defect, since it understates the true cost of regulation.
 
 ### 1.2 Versioning discipline
 - **Never overwrite** `Tesis_Meier_IFRS9_APA_v{N}.docx`. Each generation script reads `v{N}` and writes `v{N+1}`; both files must exist on disk afterward.
-- Name the generator script `src/generar_v{N+1}.py`, following the existing `src/generar_v4.py` pattern (do not edit `generar_v4.py` in place to produce v5 — copy it forward, the way `generar_v4.py` itself was not a mutation of `crear_tesis.py`).
+- Name the generator script `src/generar_v{N+1}.py`, following the existing `src/generar_v4.py` pattern. Do not edit `generar_v4.py` in place to produce v5; copy it forward, the way `generar_v4.py` itself was not a mutation of `crear_tesis.py`.
 - `V{N}_PATH` (input) and `V{N+1}_PATH` (output) are both defined relative to `BASE_PATH` from `src/config.py`, never hardcoded.
 
 ### 1.3 Cover page vs. body rules
-This is a **professional master's thesis**, not a coursework paper: the existing cover page (university, thesis title, author, advisor, date — already established in `v3`/`v4`) is the correct format and must be preserved verbatim per §1.1. Do **not** attempt to reshape it into the PDF's "course number / instructor / due date" student title page — that page layout is out of scope for this document. Every other APA rule in §2 (headings, text, tables, figures, references, statistical notation) applies to the thesis body in full.
+This is a **professional master's thesis**, not a coursework paper: the existing cover page (university, thesis title, author, advisor, date, already established in `v3`/`v4`) is the correct format and must be preserved verbatim per §1.1. Do **not** attempt to reshape it into the PDF's "course number / instructor / due date" student title page; that page layout is out of scope for this document. Every other APA rule in §2 (headings, text, tables, figures, references, statistical notation) applies to the thesis body in full.
 
 ---
 
@@ -39,9 +39,9 @@ This is a **professional master's thesis**, not a coursework paper: the existing
 | Element | Rule |
 |---|---|
 | Margins | 1 inch, all sides |
-| Font | Times New Roman, 12 pt (already the template default — see `FONT`/`BODY_PT` in `generar_v4.py`) |
-| Line spacing | Double-spaced throughout — body text, block quotes, table/figure notes, and the reference list. No blank line added before/after headings; no extra paragraph spacing. |
-| Paragraph alignment | Left-aligned, ragged right — **never full justification** |
+| Font | Times New Roman, 12 pt (already the template default; see `FONT`/`BODY_PT` in `generar_v4.py`) |
+| Line spacing | Double-spaced throughout: body text, block quotes, table/figure notes, and the reference list. No blank line added before/after headings; no extra paragraph spacing. |
+| Paragraph alignment | Left-aligned, ragged right. **Never full justification.** |
 | First-line indent | **0.5 inch** (= 1.27 cm) on every body paragraph, via the paragraph-format indent property, never spaces/tabs |
 | Page numbers | Top-right corner, every page including the cover page (page 1); no running head |
 
@@ -57,58 +57,71 @@ This is a **professional master's thesis**, not a coursework paper: the existing
 Rules: boldface every heading level; italicize only Levels 3 and 5. Use the same level for sections of equal importance; never leave a single lone subsection under a heading (use two or more, or none). Chapters in this thesis (e.g., "5. Descripción del Dataset…") are Level 1; their numbered subsections (e.g., "5.1 Freddie Mac…") are Level 2.
 
 ### 2.3 Tables
-- **Borders:** three horizontal rules only — above the header row, below the header row, and at the bottom of the table. **No vertical borders anywhere**, and **no cell shading/fill color**.
+- **Borders:** three horizontal rules only, above the header row, below the header row, and at the bottom of the table. **No vertical borders anywhere**, and **no cell shading/fill color**.
 - **Number & title:** `Tabla N` (bold) on its own line, immediately followed by the italicized descriptive title on the next line.
 - **Body:** center short numeric data; left-align long text; center column headings.
 - **Note (optional, use whenever the table needs a data-source or scope caveat):** starts with italicized `Nota. ` followed by regular (non-italic) explanatory text, double-spaced, left-aligned below the table.
-- Call out every table in the running text **before** it appears ("La Tabla N presenta…"), then place it immediately after that sentence — at the bottom of the current page, top of the next page, or alone on its own page for long tables. Never place a table in the middle of running text with no callout.
+- Call out every table in the running text **before** it appears ("La Tabla N presenta…"), then place it immediately after that sentence: at the bottom of the current page, top of the next page, or alone on its own page for long tables. Never place a table in the middle of running text with no callout.
 
 ### 2.4 Figures
-- Same numbering/caption pattern as tables: `Figura N` (bold) + italicized title on the next line, optional `Nota. ` block below in the same style.
-- High-resolution source images only (the pipeline already saves `outputs/figuras/*.png` at publication DPI — never re-embed a lower-resolution recompression).
+- Same numbering/caption pattern as tables: `Figura N` (bold) plus italicized title on the next line, optional `Nota. ` block below in the same style.
+- High-resolution source images only (the pipeline already saves `outputs/figuras/*.png` at publication DPI; never re-embed a lower-resolution recompression).
 - Callout-before-placement rule identical to tables (§2.3).
 
 ### 2.5 In-text citations & references
-- Strict author–date form: `(Autor, Año)` for parenthetical citations, `Autor (Año)` for narrative citations — e.g. `(European Banking Authority, 2017, párrs. 135-138)`, `Siddiqi (2006)`. This is already the pattern used throughout `generar_v4.py`; keep it identical in every future chapter.
-- Reference list: `References`/`Referencias` heading centered and bold, starts on its own page; entries alphabetical, double-spaced, 0.5-inch hanging indent; italicize the work title (books, reports) or the source name + volume number (journal articles). New references are inserted at their correct alphabetical position — see `insertar_referencia_antes()` in `generar_v4.py` for the established mechanism; never append new references at the end of the list out of order.
+- Strict author–date form: `(Autor, Año)` for parenthetical citations, `Autor (Año)` for narrative citations, e.g. `(European Banking Authority, 2017, párrs. 135-138)`, `Siddiqi (2006)`. This is already the pattern used throughout `generar_v4.py`; keep it identical in every future chapter.
+- Reference list: `References`/`Referencias` heading centered and bold, starts on its own page; entries alphabetical, double-spaced, 0.5-inch hanging indent; italicize the work title (books, reports) or the source name plus volume number (journal articles). New references are inserted at their correct alphabetical position; see `insertar_referencia_antes()` in `generar_v4.py` for the established mechanism. Never append new references at the end of the list out of order.
 
 ### 2.6 Statistical reporting notation
-Italicize true statistical symbols when they appear in running text or table cells: $N$, $n$, $p$, $M$, $SD$, $F$, $t$, $z$, $r$, $R^2$, $\chi^2$, $df$. **Do not** italicize domain acronyms that are not APA statistical symbols — `AUC`, `KS`, `PSI`, `Gini`, `VIF`, `CPR`, `CCF` stay in regular (roman) type. Example of correct mixed formatting: "el contraste de Hosmer-Lemeshow rechaza la hipótesis nula (*p* ≈ 0) sobre *N* = 412.065 observaciones; AUC = 0,8639."
+Italicize true statistical symbols when they appear in running text or table cells: $N$, $n$, $p$, $M$, $SD$, $F$, $t$, $z$, $r$, $R^2$, $\chi^2$, $df$. **Do not** italicize domain acronyms that are not APA statistical symbols; `AUC`, `KS`, `PSI`, `Gini`, `VIF`, `CPR`, `CCF` stay in regular (roman) type. Example of correct mixed formatting: "el contraste de Hosmer-Lemeshow rechaza la hipótesis nula (*p* ≈ 0) sobre *N* = 412.065 observaciones; AUC = 0,8639."
+
+### 2.7 Display equations (APA numbered-equation style, not code blocks)
+Every formula in the thesis is a **scientific equation**, not a code snippet, and must be typeset accordingly:
+
+- Center the equation on its own line(s), no shaded background, no monospace/`Courier New` font. Use the body font (Times New Roman) with variables in italics and operators/numbers in regular weight, exactly as a printed statistics text would render $Z = (\hat{p} - \pi) / \sqrt{\pi(1-\pi)/n}$.
+- Use real mathematical glyphs, not ASCII approximations: `×` not `*`, `÷` or a horizontal fraction not `/` where a fraction is clearer, `≥` `≤` `≈` not `>=` `<=` `~=`, `√` for roots, Greek letters (Σ, Δ, χ², ω) instead of spelled-out names, superscripts/subscripts via the run's `font.superscript`/`font.subscript` properties instead of `^`/`_` characters.
+- Number display equations at the right margin in parentheses, e.g. `(1)`, `(2)`, sequential through the whole thesis, and refer to them in text as "Ecuación 3" rather than re-describing the formula.
+- Implementation: replace the `codigo()` helper's use for formulas with a dedicated `formula()` helper in the generator script that builds the equation from a list of `(texto, cursiva, superindice, subindice)` runs (the same mixed-run pattern as `parrafo_mixto()`), never from a single preformatted ASCII string. Reserve `codigo()` (monospace, shaded) exclusively for literal pseudocode or variable-name listings, never for a mathematical formula.
+
+### 2.8 Prose style: no em dashes
+Do not use the em dash (—) anywhere in the thesis text, the compliance spec, or these guidelines. It is a stylistic tic of AI-generated prose and undermines the document's academic tone. Where a previous draft used an em dash for a parenthetical aside, rewrite the sentence using a comma, a colon, parentheses, or a full stop and a new sentence, whichever reads most naturally; do not just substitute a hyphen. The en dash for numeric/date ranges (`2016–2020`, `§17.1–§17.4`) is unaffected by this rule and should be kept.
 
 ---
 
 ## 3. Content Ingestion Contract
 
 ### 3.1 Where content comes from
-Every regulatory claim, threshold, formula, and table/figure number in chapters 5 onward must trace back to one of these two sources — never to hand-typed numbers:
+Every regulatory claim, threshold, formula, and table/figure number in chapters 5 onward must trace back to one of these two sources, never to hand-typed numbers:
 
-1. **`IFRS9_COMPLIANCE_SPEC.md`** — the regulatory narrative, control references, thresholds, and formulas (SICR $k$/$\Delta$, LGD workout horizon, CCF perimeter, PMA governance, etc.). When a chapter discusses a control, its wording should be traceable to that control's row/deep-dive in the spec, not re-derived independently.
-2. **`outputs/tablas/*.csv`** — every number placed in a table or cited inline (AUC, Gini, KS, LGD, CPR, Stage 2 %, etc.) must be `pd.read_csv()`'d live at generation time, exactly as `generar_v4.py` already does (`res = pd.read_csv(TABLAS_PATH / "resultados_modelos.csv")`). **Never hardcode a numeric result as a literal in the generator script** — if a number isn't backed by a CSV column, it must come from a documented, reproducible calculation performed inline in the generator (e.g., `rep['AUC_test'].median()`), not typed from memory.
+1. **`IFRS9_COMPLIANCE_SPEC.md`**: the regulatory narrative, control references, thresholds, and formulas (SICR $k$/$\Delta$, LGD workout horizon, CCF perimeter, PMA governance, etc.). When a chapter discusses a control, its wording should be traceable to that control's row/deep-dive in the spec, not re-derived independently.
+2. **`outputs/tablas/*.csv`**: every number placed in a table or cited inline (AUC, Gini, KS, LGD, CPR, Stage 2 %, etc.) must be `pd.read_csv()`'d live at generation time, exactly as `generar_v4.py` already does (`res = pd.read_csv(TABLAS_PATH / "resultados_modelos.csv")`). **Never hardcode a numeric result as a literal in the generator script.** If a number isn't backed by a CSV column, it must come from a documented, reproducible calculation performed inline in the generator (e.g., `rep['AUC_test'].median()`), not typed from memory.
 
 ### 3.2 Script contract for `src/generar_v{N+1}.py`
 The script must follow the exact architecture already proven in `src/generar_v4.py`:
 
 1. **Read** the current template: `doc = Document(str(V{N}_PATH))`.
-2. **Locate anchors** by heading text (`localizar_anclas()` pattern) — never by paragraph index, which shifts as content is inserted/removed.
-3. **Delete only the targeted range** (`eliminar_rango()`) — chapters being replaced — leaving chapters 1–4 and `Referencias` byte-identical.
-4. **Append new content** using the shared formatting helpers (`parrafo`, `titulo`, `tabla_df`, `figura`, `caption_tabla`, `nota_tabla`, `codigo`, `lista`) so every paragraph/table/figure inherits the same font, spacing, and APA structure — do not call raw `doc.add_paragraph()`/`doc.add_table()` outside these helpers.
+2. **Locate anchors** by heading text (`localizar_anclas()` pattern), never by paragraph index, which shifts as content is inserted/removed.
+3. **Delete only the targeted range** (`eliminar_rango()`), the chapters being replaced, leaving chapters 1–4 and `Referencias` byte-identical.
+4. **Append new content** using the shared formatting helpers (`parrafo`, `parrafo_mixto`, `titulo`, `tabla_df`, `figura`, `caption_tabla`, `nota_tabla`, `formula`, `codigo`, `lista`) so every paragraph/table/figure/equation inherits the same font, spacing, and APA structure. Do not call raw `doc.add_paragraph()`/`doc.add_table()` outside these helpers.
 5. **Relocate** the newly appended block to immediately before `Referencias` (`reubicar_nuevo_contenido()`), using element-identity anchoring, not element counts.
 6. **Insert new references** at their correct alphabetical position (`insertar_referencia_antes()`).
-7. **Save** to `V{N+1}_PATH` — never to `V{N}_PATH`.
+7. **Save** to `V{N+1}_PATH`, never to `V{N}_PATH`.
 
 ---
 
-## 4. Known Deviations — Fix Before Generating v5
+## 4. Known Deviations, Fix Before Generating the Next Version
 
-A review of `generar_v4.py`'s current helper functions against §2 found concrete gaps. Fix these in the v5 generator (or in a shared `docx_helpers.py` both v4 and v5 import) rather than repeating them:
+A review of the generator helper functions against §2 found concrete gaps. Fix these (or keep them fixed, once closed) in a shared place both `generar_v4.py` and later scripts can import, rather than repeating them:
 
-| Gap | Current behavior (`generar_v4.py`) | APA-compliant fix |
+| Gap | Symptom | APA-compliant fix |
 |---|---|---|
-| **Table borders** | `tabla_df()` draws all six border edges (`top, left, bottom, right, insideH, insideV`) — full grid | Draw only `top`, the rule under the header row, and `bottom`; remove `left`, `right`, `insideV` entirely |
-| **Table shading** | Header row shaded dark blue (`#1F4E79`) with white bold text; body rows zebra-striped white/`#E8F0FE` | Remove all `w:shd` fill elements — plain white background, black text throughout, per §2.3 |
-| **Paragraph indent** | `parrafo()` sets `first_line_indent = Cm(0.5)` (≈ 0.20 in) | Should be `Cm(1.27)` or `Inches(0.5)` per §2.1 |
-| **Heading enforcement** | `titulo()` calls `doc.add_heading(level=n)` and only overrides font name/color, trusting whatever `Heading N` Word style the template defines | Before generating v5, open the template's Styles pane (or inspect via `doc.styles['Heading 1'].font`) and confirm each level matches the §2.2 table; if not, set `bold`/`italic`/`alignment` explicitly in `titulo()` per level rather than relying on inherited style |
-| **Statistical notation italics** | `parrafo()` accepts one plain string per call — no inline run-level formatting, so a symbol like *p* or *N* mid-sentence cannot be italicized without italicizing the whole paragraph | Extend `parrafo()` (or add a `parrafo_mixto()` sibling) to accept a list of `(texto, cursiva)` tuples — the same pattern already used by `insertar_referencia_antes()` for references — so individual statistical symbols can be italicized per §2.6 without affecting surrounding text |
+| Table borders | `tabla_df()` in `generar_v4.py` drew all six border edges (`top, left, bottom, right, insideH, insideV`): full grid | Draw only `top`, the rule under the header row, and `bottom`; remove `left`, `right`, `insideV` entirely. Fixed in `generar_v5.py`. |
+| Table shading | Header row shaded dark blue (`#1F4E79`) with white bold text; body rows zebra-striped white/`#E8F0FE` | Remove all `w:shd` fill elements: plain white background, black text throughout, per §2.3. Fixed in `generar_v5.py`. |
+| Paragraph indent | `parrafo()` set `first_line_indent = Cm(0.5)` (≈ 0.20 in) | Should be `Cm(1.27)` or `Inches(0.5)` per §2.1. Fixed in `generar_v5.py`. |
+| Heading enforcement | `titulo()` calls `doc.add_heading(level=n)` and only overrides font name/color, trusting whatever `Heading N` Word style the template defines | Verified against `v4.docx`'s actual style definitions (`doc.styles['Heading 1'].font`, etc.): Heading 1 is centered bold, Heading 2 flush-left bold, Heading 3 flush-left bold italic, all Times New Roman 12 pt. Matches §2.2; no explicit override needed as of v5, but re-verify after any change to the base template. |
+| Statistical notation italics | `parrafo()` accepts one plain string per call, no inline run-level formatting | Added `parrafo_mixto()` in `generar_v5.py`, accepting a list of `(texto, cursiva)` tuples, the same pattern `insertar_referencia_antes()` already used for references. |
+| Formula display | Formulas were rendered with `codigo()` (shaded monospace box, ASCII operators), reading as a code snippet rather than a scientific equation | Add and use the `formula()` helper from §2.7 for every mathematical formula; reserve `codigo()` for literal pseudocode only. Not yet applied retroactively to every formula inherited from v3/v4; apply when next touching each chapter. |
+| Em dashes in prose | The v5 additions (Chapter 7 §7.3, Chapter 10 §10.1, Chapter 12 §12.3, Chapter 13 §13.3) and both `.md` documents used the em dash extensively, an AI-writing tell | Rewrite using commas, colons, parentheses, or shorter sentences, per §2.8. Applies to new prose in every future revision; sweep older chapters when next touched. |
 
 ---
 
@@ -117,10 +130,13 @@ A review of `generar_v4.py`'s current helper functions against §2 found concret
 Before saving `Tesis_Meier_IFRS9_APA_v{N+1}.docx`, confirm:
 
 - [ ] Chapters 1–4 and `Referencias` are byte-identical to the input template (diff paragraph count/text if unsure).
-- [ ] Every numeric claim traces to an `outputs/tablas/*.csv` column or `IFRS9_COMPLIANCE_SPEC.md` — no hardcoded figures.
+- [ ] Chapter 17 (Costo de la Regulación) is present in full, with all three model families (WoE, IFRS 9–disciplined ML, fully unrestricted ML) distinctly represented, not just two.
+- [ ] Every numeric claim traces to an `outputs/tablas/*.csv` column or `IFRS9_COMPLIANCE_SPEC.md`; no hardcoded figures.
 - [ ] Every table has exactly three horizontal rules, no vertical borders, no cell shading (§2.3, §4).
+- [ ] Every formula uses the `formula()` APA display-equation style, not a shaded `codigo()` block (§2.7).
+- [ ] No em dash (—) appears anywhere in the generated text (§2.8).
 - [ ] Every table/figure is called out in text before it appears.
 - [ ] Heading levels used match the §2.2 table (spot-check one heading per level).
 - [ ] First-line indent is 0.5 in / 1.27 cm, not 0.5 cm.
 - [ ] New references were inserted alphabetically via `insertar_referencia_antes()`, not appended at the end.
-- [ ] Both `v{N}.docx` and the new `v{N+1}.docx` exist on disk — the older version was never overwritten.
+- [ ] Both `v{N}.docx` and the new `v{N+1}.docx` exist on disk; the older version was never overwritten.

@@ -10,3 +10,6 @@ claude.md
 .claude
 .doc
 
+# excede el limite de 100MB de GitHub (RF sin restricciones, max_depth=20)
+outputs/modelos/modelo_rf_ml_libre.joblib
+

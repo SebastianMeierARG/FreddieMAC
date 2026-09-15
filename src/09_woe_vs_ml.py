@@ -1,44 +1,58 @@
 """
 09_woe_vs_ml.py – Costo de la Regulación vs. Machine Learning
 =================================================================
-Compara dos arquitecturas de modelado de PD bajo el mismo marco IFRS 9:
+Compara tres arquitecturas de modelado de PD bajo el mismo marco IFRS 9:
 
-  Familia A – Scorecard regulatorio (WoE)
+  Familia A - Scorecard regulatorio (WoE)
     Cada variable se transforma a su Weight of Evidence (WoE) sobre bins
-    ajustados en TRAIN, y se entrena Regresión Logística, XGBoost y Random
-    Forest sobre esa matriz transformada. Es el enfoque clásico de scorecard
-    de riesgo de crédito (Siddiqi, 2006; Thomas et al., 2017): monotonía y
-    linealidad impuestas por diseño, alta interpretabilidad, IV por variable.
+    ajustados en TRAIN, y se entrena Regresion Logistica, XGBoost y Random
+    Forest sobre esa matriz transformada. Es el enfoque clasico de scorecard
+    de riesgo de credito (Siddiqi, 2006; Thomas et al., 2017): monotonia y
+    linealidad impuestas por diseno, alta interpretabilidad, IV por variable.
 
-  Familia B – ML sin restricciones (Raw)
-    XGBoost y Random Forest entrenados directamente sobre las variables
-    originales (continuas + categóricas codificadas + relativas a cohorte),
-    permitiendo interacciones y no linealidades libres. Son los modelos ya
-    optimizados en 04_modelado.py (con restricciones de monotonía sobre los
-    drivers de riesgo, pero sin discretización previa) — se reutilizan tal
-    cual, calibrados isotónicamente.
+  Familia B - ML disciplinado bajo IFRS 9 (sin WoE)
+    Los modelos XGBoost y Random Forest ya optimizados en 04_modelado.py
+    para ser el modelo campeon de la tesis: variables continuas y relativas
+    a cohorte (sin discretizacion previa), pero con las restricciones que
+    exige la gobernanza IFRS 9 / EBA GL/2017/16 Sec. 5.3.1 (monotonia sobre
+    los drivers de riesgo, sin scale_pos_weight para preservar la PD cruda
+    interpretable). Se reutilizan tal cual, calibrados isotonicamente.
 
-Ambas familias se evalúan bajo idéntica partición temporal (train 2016-2020,
-val 2022-2023, test 2024 OOT) para una comparación de "costo de la
-regulación": cuánta capacidad predictiva se sacrifica (o se gana en
-gobernabilidad) al imponer la estructura WoE tradicional frente al ML sin
-restricciones, y cómo se traduce esa diferencia en provisiones de ECL y en
-la tasa de falsos positivos de la migración a Stage 2 (SICR).
+  Familia C - ML sin ninguna restriccion regulatoria
+    XGBoost y Random Forest entrenados especificamente para esta
+    comparacion, sin restriccion de monotonia y con libertad total de
+    features: incorporan tambien las variables de nivel absoluto excluidas
+    del modelo campeon por desplazamiento de covariables
+    (FEATURES_NIVEL_EXCLUIDAS, config.py; Sec. 8.1), y usan
+    scale_pos_weight para el desbalance de clases (recalibrado
+    isotonicamente despues, por lo que no distorsiona el ECL resultante).
+    Es la version mas potente que construiria un equipo de ciencia de datos
+    sin ningun condicionamiento regulatorio: el punto de comparacion real
+    para medir cuanto se sacrifica al imponer las Familias A o B.
 
-Metodología SICR por modelo (Sección 13.5 / IFRS 9 5.5.9):
-  Para cada familia se entrena además un modelo de PD en originación (mismas
-  variables de FEATURES_ORIGINACION_EXT, misma transformación WoE/raw) que
-  sirve de referencia t=0. El criterio de SICR (k, delta, backstop) definido
-  en config.py se aplica de forma idéntica a las cinco combinaciones
-  PD-corriente / PD-originación, de modo que las diferencias en Stage 2 y en
+Las tres familias se evaluan bajo identica particion temporal (train
+2016-2020, val 2022-2023, test 2024 OOT) para una comparacion de "costo de
+la regulacion": cuanta capacidad predictiva se sacrifica (o se gana en
+gobernabilidad) al imponer cada nivel de restriccion regulatoria frente al
+ML sin restricciones, y como se traduce esa diferencia en provisiones de
+ECL y en la tasa de falsos positivos de la migracion a Stage 2 (SICR).
+
+Metodologia SICR por modelo (Sec. 13.5 / IFRS 9 5.5.9):
+  Para cada familia se entrena ademas un modelo de PD en originacion (mismas
+  variables de esa familia, restringidas a lo disponible en t=0) que sirve
+  de referencia. El criterio de SICR (k, delta, backstop) definido en
+  config.py se aplica de forma identica a las siete combinaciones
+  PD-corriente / PD-originacion, de modo que las diferencias en Stage 2 y en
   ECL sean atribuibles exclusivamente a la arquitectura de modelado.
 
 Entrada  : data/dataset_modelado.parquet
            outputs/modelos/modelo_xgboost.joblib, modelo_random_forest.joblib,
-           modelo_pd_originacion.joblib (familia Raw, ya entrenados en 04/03b)
+           modelo_pd_originacion.joblib (familia B, ya entrenados en 04/03b)
            outputs/tablas/lgd_politica_perdida_total.csv (LGD ponderada)
 Salida   : outputs/modelos/modelo_{lr,xgb,rf}_woe.joblib
            outputs/modelos/modelo_pd_originacion_woe.joblib
+           outputs/modelos/modelo_{xgb,rf}_ml_libre.joblib
+           outputs/modelos/modelo_pd_originacion_ml_libre.joblib
            outputs/tablas/woe_bins_iv.csv
            outputs/tablas/comparacion_woe_vs_raw_metricas.csv
            outputs/tablas/comparacion_woe_vs_raw_sicr.csv
@@ -55,18 +69,29 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.impute import SimpleImputer
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, roc_auc_score, roc_curve
+from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 
 from config import (
     DATASET_MOD_PARQUET, MODELOS_PATH, TABLAS_PATH, FIGURAS_PATH,
-    FEATURES_MODELO, FEATURES_ORIGINACION_EXT, TARGET,
+    FEATURES_MODELO, FEATURES_ORIGINACION_EXT, FEATURES_NIVEL_EXCLUIDAS, TARGET,
     AÑOS_ENTRENAMIENTO, AÑOS_VALIDACION, AÑOS_TEST, AÑO_EARLY_STOPPING,
-    MAX_TRAIN_OBS, HORIZONTE_PD_MESES,
+    MAX_TRAIN_OBS, HORIZONTE_PD_MESES, XGB_MAX_ESTIMATORS, XGB_EARLY_STOPPING,
     SICR_RELATIVE_THRESHOLD, SICR_ABSOLUTE_THRESHOLD, SICR_BACKSTOP_DPD,
     LGD_DOWNTURN_ADDON, LGD_MAX,
+)
+
+# Familia C: libertad total de features. Incluye las variables de nivel
+# absoluto excluidas del modelo campeon (Sec. 8.1) porque, sin la disciplina
+# de estabilidad temporal que exige un modelo de produccion IFRS 9, un
+# equipo de ML sin restricciones las usaria igual para maximizar AUC.
+FEATURES_LIBRE = sorted(set(FEATURES_MODELO) | set(FEATURES_NIVEL_EXCLUIDAS))
+FEATURES_LIBRE_ORIG = sorted(
+    set(FEATURES_ORIGINACION_EXT) | {"original_interest_rate", "original_upb"}
 )
 
 import sys as _sys, os as _os
@@ -74,6 +99,7 @@ _sys.path.insert(0, str(_os.path.dirname(__file__)))
 from importlib import import_module as _im
 _p04 = _im("04_modelado")
 ModeloCalibraado = _p04.ModeloCalibraado  # noqa: F401
+_sys.modules["m04"] = _p04  # compat: algunos .joblib fueron pickled desde el notebook bajo ese alias
 
 # modelo_pd_originacion.joblib (familia Raw, generado por 03b_sicr_assessment.py)
 # fue serializado mientras ese script corría como __main__, por lo que su clase
@@ -82,6 +108,7 @@ ModeloCalibraado = _p04.ModeloCalibraado  # noqa: F401
 # actual antes de cualquier joblib.load.
 _p03b = _im("03b_sicr_assessment")
 _sys.modules["__main__"]._ModeloOrigCal = _p03b._ModeloOrigCal  # noqa: F401
+_sys.modules["m03b"] = _p03b  # compat: alias usado al pickled desde el notebook
 
 warnings.filterwarnings("ignore")
 plt.rcParams.update({"font.family": "serif", "font.size": 11})
@@ -283,6 +310,127 @@ def entrenar_originacion_woe(dataset: pd.DataFrame) -> tuple:
 
 
 # ---------------------------------------------------------------------------
+# Entrenamiento de la familia C: ML sin restricciones regulatorias
+# ---------------------------------------------------------------------------
+
+def _pipeline_xgb_libre(pos_weight: float) -> Pipeline:
+    return Pipeline([
+        ("imputer", SimpleImputer(strategy="constant", fill_value=-999)),
+        ("modelo", XGBClassifier(
+            n_estimators=XGB_MAX_ESTIMATORS,
+            early_stopping_rounds=XGB_EARLY_STOPPING,
+            max_depth=8,
+            min_child_weight=20,
+            learning_rate=0.05,
+            reg_lambda=1.0,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            scale_pos_weight=pos_weight,
+            objective="binary:logistic",
+            eval_metric="auc",
+            random_state=42,
+            n_jobs=4,
+            verbosity=0,
+        )),
+    ])
+
+
+def _fit_xgb_libre_con_early_stopping(pipe: Pipeline, Xtr, ytr, Xva, yva) -> Pipeline:
+    """Ajusta el imputer y entrena XGBoost con early stopping sobre validación,
+    reproduciendo Pipeline.fit() paso a paso porque XGBClassifier necesita el
+    eval_set ya imputado (sklearn Pipeline no propaga eval_set al último paso)."""
+    imputer = pipe.named_steps["imputer"]
+    Xtr_imp = imputer.fit_transform(Xtr)
+    Xva_imp = imputer.transform(Xva)
+    pipe.named_steps["modelo"].fit(
+        Xtr_imp, ytr, eval_set=[(Xva_imp, yva)], verbose=False)
+    return pipe
+
+
+def entrenar_ml_libre(dataset: pd.DataFrame, features_libre: list) -> dict:
+    """Familia C: XGBoost y Random Forest sin restricción de monotonía, con
+    libertad total de features (incluye FEATURES_NIVEL_EXCLUIDAS) y manejo
+    de desbalance vía scale_pos_weight. Ver docstring del módulo."""
+    train = dataset[dataset["vintage_year"].isin(AÑOS_ENTRENAMIENTO)]
+    if len(train) > MAX_TRAIN_OBS:
+        idx = np.random.RandomState(42).choice(len(train), MAX_TRAIN_OBS, replace=False)
+        train = train.iloc[idx]
+    val = dataset[dataset["vintage_year"].isin(AÑOS_VALIDACION)]
+
+    Xtr, ytr = train[features_libre], train[TARGET].astype(int)
+    Xva, yva = val[features_libre], val[TARGET].astype(int)
+    pos_weight = float((ytr == 0).sum()) / float(max(int((ytr == 1).sum()), 1))
+
+    modelos = {}
+
+    xgb_pipe = _fit_xgb_libre_con_early_stopping(
+        _pipeline_xgb_libre(pos_weight), Xtr, ytr, Xva, yva)
+    n_arboles = xgb_pipe.named_steps["modelo"].best_iteration + 1
+    print(f"    XGB_ML_Libre: {n_arboles} árboles por early stopping "
+          f"(AUC validación = {xgb_pipe.named_steps['modelo'].best_score:.4f})")
+    modelos["XGB_ML_Libre"] = calibrar(xgb_pipe, Xva, yva)
+
+    # max_depth=None (arboles sin acotar) sobre ~1M filas x 30 features agoto
+    # la RAM disponible (proceso terminado por el sistema operativo). max_depth=20
+    # sigue siendo notablemente mas libre que el RF_IFRS9 disciplinado (max_depth=10,
+    # config.RF_PARAMS) sin ese riesgo; n_jobs acotado evita multiplicar el pico
+    # de memoria por la cantidad de nucleos.
+    rf_pipe = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("modelo", RandomForestClassifier(
+            n_estimators=400,
+            max_depth=20,
+            min_samples_leaf=20,
+            class_weight="balanced",
+            random_state=42,
+            n_jobs=4,
+        )),
+    ])
+    rf_pipe.fit(Xtr, ytr)
+    modelos["RF_ML_Libre"] = calibrar(rf_pipe, Xva, yva)
+
+    return modelos
+
+
+def entrenar_originacion_ml_libre(dataset: pd.DataFrame, features_orig_libre: list):
+    """PD de originación de la familia C: XGBoost sin monotonía, con las dos
+    variables de nivel absoluto disponibles en t=0 (original_interest_rate,
+    original_upb); nunca las de saldo/tasa corriente, que no existen en
+    originación."""
+    train = dataset[dataset["vintage_year"].isin(AÑOS_ENTRENAMIENTO)]
+    if len(train) > MAX_TRAIN_OBS:
+        idx = np.random.RandomState(42).choice(len(train), MAX_TRAIN_OBS, replace=False)
+        train = train.iloc[idx]
+    val = dataset[dataset["vintage_year"].isin(AÑOS_VALIDACION)]
+
+    Xtr, ytr = train[features_orig_libre], train[TARGET].astype(int)
+    Xva, yva = val[features_orig_libre], val[TARGET].astype(int)
+    pos_weight = float((ytr == 0).sum()) / float(max(int((ytr == 1).sum()), 1))
+
+    pipe = Pipeline([
+        ("imputer", SimpleImputer(strategy="constant", fill_value=-999)),
+        ("modelo", XGBClassifier(
+            n_estimators=500,
+            early_stopping_rounds=XGB_EARLY_STOPPING,
+            max_depth=5,
+            min_child_weight=50,
+            learning_rate=0.05,
+            reg_lambda=1.0,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            scale_pos_weight=pos_weight,
+            objective="binary:logistic",
+            eval_metric="auc",
+            random_state=42,
+            n_jobs=4,
+            verbosity=0,
+        )),
+    ])
+    pipe = _fit_xgb_libre_con_early_stopping(pipe, Xtr, ytr, Xva, yva)
+    return calibrar(pipe, Xva, yva)
+
+
+# ---------------------------------------------------------------------------
 # Evaluación comparativa
 # ---------------------------------------------------------------------------
 
@@ -344,24 +492,28 @@ def evaluar_modelo_sicr(nombre: str, pd_current_12m: np.ndarray,
 
 def main():
     print("=" * 60)
-    print("PASO 9 – Costo de la Regulación (WoE) vs. Machine Learning (Raw)")
+    print("PASO 9 - Costo de la Regulacion: WoE vs. ML disciplinado vs. ML libre")
     print("=" * 60)
 
     features = [f for f in FEATURES_MODELO
                if f in pq.read_schema(DATASET_MOD_PARQUET).names]
-    columnas = sorted(set(features + FEATURES_ORIGINACION_EXT
+    columnas = sorted(set(features + FEATURES_ORIGINACION_EXT + FEATURES_LIBRE
+                          + FEATURES_LIBRE_ORIG
                           + [TARGET, "vintage_year", "loan_age",
                              "original_loan_term", "dpd_numerico",
                              "current_actual_upb"]))
     disponibles = pq.read_schema(DATASET_MOD_PARQUET).names
     dataset = pd.read_parquet(DATASET_MOD_PARQUET,
                               columns=[c for c in columnas if c in disponibles])
-    print(f"Dataset cargado: {len(dataset):,} filas | {len(features)} features")
+    features_libre = [f for f in FEATURES_LIBRE if f in dataset.columns]
+    features_libre_orig = [f for f in FEATURES_LIBRE_ORIG if f in dataset.columns]
+    print(f"Dataset cargado: {len(dataset):,} filas | {len(features)} features "
+          f"(Familia A/B) | {len(features_libre)} features (Familia C, sin restriccion)")
 
     # ------------------------------------------------------------------
-    # 1. Familia WoE: ajuste y entrenamiento
+    # 1. Familia A: scorecard WoE
     # ------------------------------------------------------------------
-    print("\n  [Familia A – Scorecard WoE] Ajustando bins y entrenando LR/XGB/RF...")
+    print("\n  [Familia A - Scorecard WoE] Ajustando bins y entrenando LR/XGB/RF...")
     familia_woe = entrenar_familia_woe(dataset, features)
     woe, modelos_woe = familia_woe["woe"], familia_woe["modelos"]
 
@@ -369,7 +521,7 @@ def main():
     print(tabla_iv.head(15).to_string(index=False))
     tabla_iv.to_csv(TABLAS_PATH / "woe_bins_iv.csv", index=False)
 
-    print("\n  [Familia A] Entrenando modelo de PD en originación (WoE)...")
+    print("\n  [Familia A] Entrenando modelo de PD en originacion (WoE)...")
     modelo_orig_woe, woe_orig, features_orig = entrenar_originacion_woe(dataset)
 
     for nombre, modelo in modelos_woe.items():
@@ -378,15 +530,29 @@ def main():
     print("  Modelos WoE guardados en outputs/modelos/.")
 
     # ------------------------------------------------------------------
-    # 2. Familia Raw: cargar modelos ya entrenados (04_modelado.py, 03b)
+    # 2. Familia B: modelo campeon IFRS 9, ya entrenado (04_modelado.py, 03b)
     # ------------------------------------------------------------------
-    print("\n  [Familia B – ML sin restricciones (Raw)] Cargando modelos ya calibrados...")
-    modelo_xgb_raw = joblib.load(MODELOS_PATH / "modelo_xgboost.joblib")
-    modelo_rf_raw  = joblib.load(MODELOS_PATH / "modelo_random_forest.joblib")
-    modelo_orig_raw = joblib.load(MODELOS_PATH / "modelo_pd_originacion.joblib")
+    print("\n  [Familia B - ML disciplinado IFRS 9] Cargando modelos ya calibrados...")
+    modelo_xgb_ifrs9 = joblib.load(MODELOS_PATH / "modelo_xgboost.joblib")
+    modelo_rf_ifrs9  = joblib.load(MODELOS_PATH / "modelo_random_forest.joblib")
+    modelo_orig_ifrs9 = joblib.load(MODELOS_PATH / "modelo_pd_originacion.joblib")
 
     # ------------------------------------------------------------------
-    # 3. Evaluación conjunta sobre test (2024, out-of-time)
+    # 3. Familia C: ML sin ninguna restriccion regulatoria (entrenamiento propio)
+    # ------------------------------------------------------------------
+    print("\n  [Familia C - ML sin restricciones] Entrenando XGB/RF con libertad "
+          "total de features y sin monotonia...")
+    modelos_libre = entrenar_ml_libre(dataset, features_libre)
+    print("\n  [Familia C] Entrenando modelo de PD en originacion (sin restricciones)...")
+    modelo_orig_libre = entrenar_originacion_ml_libre(dataset, features_libre_orig)
+
+    joblib.dump(modelos_libre["XGB_ML_Libre"], MODELOS_PATH / "modelo_xgb_ml_libre.joblib")
+    joblib.dump(modelos_libre["RF_ML_Libre"], MODELOS_PATH / "modelo_rf_ml_libre.joblib")
+    joblib.dump(modelo_orig_libre, MODELOS_PATH / "modelo_pd_originacion_ml_libre.joblib")
+    print("  Modelos ML libre guardados en outputs/modelos/.")
+
+    # ------------------------------------------------------------------
+    # 4. Evaluación conjunta sobre test (2024, out-of-time)
     # ------------------------------------------------------------------
     test = dataset[dataset["vintage_year"].isin(AÑOS_TEST)].copy()
     y_test = test[TARGET].astype(int).to_numpy()
@@ -396,8 +562,10 @@ def main():
 
     Xtest_woe_full = woe.transform(test[features])
     Xtest_woe_orig = woe_orig.transform(test[features_orig])
-    Xtest_raw_full = test[features]
-    Xtest_raw_orig = test[features_orig]
+    Xtest_ifrs9_full = test[features]
+    Xtest_ifrs9_orig = test[features_orig]
+    Xtest_libre_full = test[features_libre]
+    Xtest_libre_orig = test[features_libre_orig]
 
     lgd_pol = pd.read_csv(TABLAS_PATH / "lgd_politica_perdida_total.csv")
     lgd_ponderada = float(
@@ -411,8 +579,12 @@ def main():
         ("LR_WoE",  modelos_woe["LR_WoE"], Xtest_woe_full, modelo_orig_woe, Xtest_woe_orig),
         ("XGB_WoE", modelos_woe["XGB_WoE"], Xtest_woe_full, modelo_orig_woe, Xtest_woe_orig),
         ("RF_WoE",  modelos_woe["RF_WoE"], Xtest_woe_full, modelo_orig_woe, Xtest_woe_orig),
-        ("XGB_Raw_Calibrado", modelo_xgb_raw, Xtest_raw_full, modelo_orig_raw, Xtest_raw_orig),
-        ("RF_Raw_Calibrado",  modelo_rf_raw,  Xtest_raw_full, modelo_orig_raw, Xtest_raw_orig),
+        ("XGB_IFRS9", modelo_xgb_ifrs9, Xtest_ifrs9_full, modelo_orig_ifrs9, Xtest_ifrs9_orig),
+        ("RF_IFRS9",  modelo_rf_ifrs9,  Xtest_ifrs9_full, modelo_orig_ifrs9, Xtest_ifrs9_orig),
+        ("XGB_ML_Libre", modelos_libre["XGB_ML_Libre"], Xtest_libre_full,
+         modelo_orig_libre, Xtest_libre_orig),
+        ("RF_ML_Libre",  modelos_libre["RF_ML_Libre"],  Xtest_libre_full,
+         modelo_orig_libre, Xtest_libre_orig),
     ]
 
     filas_metricas, filas_sicr, curvas_roc = [], [], {}
@@ -459,18 +631,19 @@ def main():
     print("\n  Tablas guardadas: comparacion_woe_vs_raw_{metricas,sicr,ecl}.csv")
 
     # ------------------------------------------------------------------
-    # 4. Figuras
+    # 5. Figuras
     # ------------------------------------------------------------------
     fig, ax = plt.subplots(figsize=(7.5, 6.5))
     colores = {"LR_WoE": "#2166ac", "XGB_WoE": "#4393c3", "RF_WoE": "#92c5de",
-              "XGB_Raw_Calibrado": "#d6604d", "RF_Raw_Calibrado": "#b2182b"}
+              "XGB_IFRS9": "#f4a582", "RF_IFRS9": "#d6604d",
+              "XGB_ML_Libre": "#67001f", "RF_ML_Libre": "#b2182b"}
     for nombre, (fpr, tpr, auc_v) in curvas_roc.items():
         ax.plot(fpr, tpr, label=f"{nombre} (AUC={auc_v:.4f})",
                 color=colores.get(nombre), linewidth=2)
     ax.plot([0, 1], [0, 1], "k--", linewidth=1, label="Aleatorio")
     ax.set_xlabel("Tasa de Falsos Positivos (FPR)")
     ax.set_ylabel("Tasa de Verdaderos Positivos (TPR)")
-    ax.set_title("Curva ROC – Scorecard WoE vs. ML sin restricciones (test 2024)")
+    ax.set_title("Curva ROC: scorecard WoE vs. ML disciplinado IFRS 9 vs. ML sin restricciones (test 2024)")
     ax.legend(loc="lower right", fontsize=8)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()

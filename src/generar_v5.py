@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_BREAK
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
@@ -134,6 +134,41 @@ def codigo(doc, texto: str):
     run = p.add_run(texto)
     run.font.name = "Courier New"
     run.font.size = Pt(9.5)
+    return p
+
+
+_CONTADOR_ECUACION = [0]
+
+
+def formula(doc, partes, numerar: bool = True):
+    """Ecuacion en estilo APA (THESIS_WRITING_GUIDELINES.md Sec. 2.7): centrada,
+    sin sombreado ni fuente monoespaciada, variables en cursiva, operadores en
+    peso regular, numerada de forma secuencial al margen derecho.
+
+    `partes` es una lista de tuplas (texto, cursiva, superindice, subindice);
+    los dos ultimos campos son opcionales (default False)."""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(8)
+    p.paragraph_format.space_after = Pt(8)
+    p.paragraph_format.line_spacing = 1.5
+    for item in partes:
+        if item[0] == "\n" and len(item) == 1:
+            p.add_run().add_break(WD_BREAK.LINE)
+            continue
+        texto = item[0]
+        cursiva = item[1] if len(item) > 1 else False
+        supra = item[2] if len(item) > 2 else False
+        sub = item[3] if len(item) > 3 else False
+        run = p.add_run(texto)
+        set_run_font(run, cursiva=cursiva)
+        run.font.superscript = supra
+        run.font.subscript = sub
+    if numerar:
+        _CONTADOR_ECUACION[0] += 1
+        p.paragraph_format.tab_stops.add_tab_stop(Cm(16.0), WD_TAB_ALIGNMENT.RIGHT)
+        run_num = p.add_run(f"\t({_CONTADOR_ECUACION[0]})")
+        set_run_font(run_num)
     return p
 
 
@@ -468,7 +503,7 @@ def cap6_pipeline(doc):
         {"Paso": "6b", "Módulo": "06b_segmentacion.py", "Salida": "segmentacion_*.csv",
          "Control atendido": "3.1, 3.2, 3.6"},
         {"Paso": "7",  "Módulo": "07_explicabilidad.py", "Salida": "shap_*.png/csv",
-         "Control atendido": "—"},
+         "Control atendido": "No aplica"},
         {"Paso": "8",  "Módulo": "08_lgd_ead.py", "Salida": "lgd_*.csv, ead_*.csv",
          "Control atendido": "7.1, 7.3, 7.5, 7.7, 8.1, 8.2, 8.6"},
         {"Paso": "9",  "Módulo": "09_woe_vs_ml.py", "Salida": "comparacion_woe_vs_raw_*.csv",
@@ -509,14 +544,37 @@ def cap7_default_sicr(doc):
         "SICR bajo IFRS 9 párr. 5.5.9 es la variación de la Lifetime PD entre el "
         "reconocimiento inicial y la fecha de reporte, evaluada sobre el mismo "
         "horizonte residual. El párr. 5.5.11 califica el backstop de 30 días de "
-        "mora como una presunción refutable —un refuerzo prudencial, no el "
-        "indicador principal— en línea con EBA GL/2017/16 (European Banking "
+        "mora como una presunción refutable, un refuerzo prudencial y no el "
+        "indicador principal, en línea con EBA GL/2017/16 (European Banking "
         "Authority, 2017, párrs. 135-138).")
-    codigo(doc,
-        "PD_lifetime = 1 - (1 - PD_12m)^(T_residual / 12)      (extrapolación de hazard constante)\n\n"
-        "SICR  si   PD_lifetime_t / PD_lifetime_orig  >=  k          (criterio relativo, primario)\n"
-        "      o    PD_lifetime_t  -  PD_lifetime_orig  >=  delta    (criterio absoluto)\n"
-        "      o    DPD >= 30                                        (backstop, IFRS 9 5.5.11)")
+    parrafo(doc,
+        "Extrapolación de hazard constante de la PD a 12 meses a Lifetime PD "
+        "sobre el horizonte residual del préstamo:", indent=False)
+    formula(doc, [
+        ("PD", True), ("lifetime", False, False, True),
+        (" = 1 − (1 − ", False),
+        ("PD", True), ("12m", False, False, True),
+        (")", False),
+        ("T", True, True), ("res /12", False, True),
+    ])
+    parrafo(doc,
+        "El préstamo presenta un incremento significativo del riesgo de "
+        "crédito (SICR) cuando se cumple al menos una de las siguientes "
+        "condiciones:", indent=False)
+    formula(doc, [
+        ("PD", True), ("lifetime,t", False, False, True),
+        (" / ", False),
+        ("PD", True), ("lifetime,orig", False, False, True),
+        (" ≥ k", False), ("   (criterio relativo, primario)", False),
+        ("\n",),
+        ("∨   ", False),
+        ("PD", True), ("lifetime,t", False, False, True),
+        (" − ", False),
+        ("PD", True), ("lifetime,orig", False, False, True),
+        (" ≥ Δ", False), ("   (criterio absoluto)", False),
+        ("\n",),
+        ("∨   DPD ≥ 30   (backstop, IFRS 9 5.5.11)", False),
+    ])
     parrafo(doc,
         "La PD de originación se estima con una Regresión Logística entrenada "
         "exclusivamente sobre variables disponibles al momento de la concesión "
@@ -528,7 +586,7 @@ def cap7_default_sicr(doc):
     parrafo(doc,
         "Los umbrales k = 2,5 y delta = 5 puntos porcentuales se calibraron "
         "empíricamente sobre una grilla cruzada de sensibilidad. Un umbral "
-        "absoluto de 0,5 p.p. —adecuado para una PD a 12 meses— resulta demasiado "
+        "absoluto de 0,5 p.p., adecuado para una PD a 12 meses, resulta demasiado "
         "laxo aplicado sobre la escala de la Lifetime PD (media de la cartera "
         "≈ 14 %): con ese valor, el criterio absoluto por sí solo explicaba el "
         "99,98 % de la clasificación en Stage 2, anulando el aporte del criterio "
@@ -551,8 +609,8 @@ def cap7_default_sicr(doc):
         "meses de 6,42 % dentro de ese Stage 2 frente a 0,74 % en Stage 1 (lift de "
         "8,7×), cubriendo el 44,55 % de los defaults futuros de la cartera. El "
         "backstop de 30 DPD explica apenas el 0,10 % de las clasificaciones en "
-        "Stage 2 de forma exclusiva —el 99,90 % restante ya estaba correctamente "
-        "identificado por el criterio basado en PD—, confirmando que el backstop "
+        "Stage 2 de forma exclusiva (el 99,90 % restante ya estaba correctamente "
+        "identificado por el criterio basado en PD), confirmando que el backstop "
         "opera como refuerzo cualitativo y no como indicador principal, conforme "
         "exige EBA GL/2017/16 §5.5 (Control 11.3, IFRS9_COMPLIANCE_SPEC.md).")
 
@@ -586,16 +644,34 @@ def cap7_default_sicr(doc):
         "de comportamiento fue_modificado y tiene_deferral (FEATURES_COMPORTAMIENTO, "
         "config.py) se utilizan únicamente como covariables del modelo de PD, no "
         "como un disparador de default independiente. Un criterio formal de "
-        "concesión basado en el valor presente neto (NPV) —donde una "
+        "concesión basado en el valor presente neto (NPV), donde una "
         "modificación se trata como evento UTP cuando el NPV de los flujos "
         "reestructurados cae materialmente por debajo del NPV contractual "
-        "original— se especifica como el diseño objetivo en "
+        "original, se especifica como el diseño objetivo en "
         "IFRS9_COMPLIANCE_SPEC.md (Control 4.1) pero no está implementado en "
         "02_definicion_default.py.")
-    codigo(doc,
-        "NPV_original      = Σ_t  CF_contractual_t / (1 + i)^t\n"
-        "NPV_reestructurado = Σ_t  CF_modificado_t   / (1 + i)^t\n\n"
-        "UTP_concesion  si  (NPV_original - NPV_reestructurado) / NPV_original  >=  umbral_materialidad")
+    formula(doc, [
+        ("NPV", True), ("original", False, False, True),
+        (" = Σ", False), ("t", False, False, True),
+        (" ", False), ("CF", True), ("contractual,t", False, False, True),
+        (" / (1 + ", False), ("i", True), (")", False),
+        ("t", True, True),
+        ("\n",),
+        ("NPV", True), ("reestructurado", False, False, True),
+        (" = Σ", False), ("t", False, False, True),
+        (" ", False), ("CF", True), ("modificado,t", False, False, True),
+        (" / (1 + ", False), ("i", True), (")", False),
+        ("t", True, True),
+    ])
+    formula(doc, [
+        ("Concesión NPV si  (", False),
+        ("NPV", True), ("original", False, False, True),
+        (" − ", False),
+        ("NPV", True), ("reestructurado", False, False, True),
+        (") / ", False),
+        ("NPV", True), ("original", False, False, True),
+        (" ≥ umbral de materialidad", False),
+    ])
     parrafo(doc,
         "con i la tasa de descuento efectiva anual (TASA_DESCUENTO_ANUAL, "
         "config.py, ya utilizada para descontar recuperaciones de LGD en el "
@@ -620,8 +696,8 @@ def cap8_feature_engineering(doc):
 
     titulo(doc, "8.1 El Problema del Desplazamiento de Covariables", nivel=2)
     parrafo(doc,
-        "Las variables de nivel absoluto —tasa nominal original y corriente, UPB "
-        "original y saldo corriente en USD— presentan un desplazamiento de "
+        "Las variables de nivel absoluto (tasa nominal original y corriente, UPB "
+        "original y saldo corriente en USD) presentan un desplazamiento de "
         "covariables severo entre particiones temporales: la tasa media de "
         "originación pasa de 3,96 % en el conjunto de entrenamiento (vintages "
         "2016-2020) a 6,74 % en el conjunto de test (vintage 2024), reflejando el "
@@ -706,13 +782,13 @@ def cap9_modelado(doc):
         "margen de un punto porcentual de AUC entre sí (0,8540-0,8647): la brecha "
         "artificial de más de siete puntos observada en la especificación inicial "
         "desaparece por completo, confirmando que el desplazamiento de "
-        "covariables —y no una limitación inherente del algoritmo— era la causa "
+        "covariables, y no una limitación inherente del algoritmo, era la causa "
         "del deterioro de XGBoost fuera de muestra.")
     parrafo(doc,
         "Dado que la selección de modelo campeón se realiza sobre el conjunto de "
-        "validación —la partición metodológicamente correcta para ese propósito, "
-        "ya que el test (2024) se reserva exclusivamente para la evaluación "
-        "final out-of-time—, XGBoost calibrado isotónicamente se adopta como el "
+        "validación (la partición metodológicamente correcta para ese propósito, "
+        "ya que el test de 2024 se reserva exclusivamente para la evaluación "
+        "final out-of-time), XGBoost calibrado isotónicamente se adopta como el "
         "modelo principal de PD utilizado en los Capítulos 10 a 13 y 16. Su "
         "desempeño se contrasta en el Capítulo 17 contra un scorecard "
         "regulatorio tradicional basado en Weight of Evidence.")
@@ -797,7 +873,7 @@ def cap10_segmentacion(doc):
         f"{rep['AUC_test'].median():.4f}: el poder discriminante del modelo se "
         "conserva de forma consistente a través de todos los cortes evaluados, "
         "sin colapsar en ningún segmento particular. El PSI resulta elevado en la "
-        "mayoría de los segmentos —una consecuencia esperable del fuerte cambio "
+        "mayoría de los segmentos, una consecuencia esperable del fuerte cambio "
         "en la composición etaria de la cartera entre entrenamiento (loan_age "
         "medio 31 meses) y test (loan_age medio 4 meses), documentado en la "
         "Sección 8.1, y no de una inestabilidad del modelo en sí.")
@@ -821,8 +897,8 @@ def cap10_segmentacion(doc):
         "rechaza la hipótesis de homogeneidad estricta en la generalidad de los "
         "segmentos. Dado el tamaño muestral de cada segmento (superior a 40.000 "
         "observaciones en la mayoría de los casos), esto es un resultado esperado "
-        "de la alta potencia estadística del test —cualquier diferencia "
-        "económicamente pequeña se vuelve estadísticamente significativa— y no "
+        "de la alta potencia estadística del test: cualquier diferencia "
+        "económicamente pequeña se vuelve estadísticamente significativa, y no "
         "necesariamente indica una segmentación defectuosa. La dispersión "
         "relativa de la tasa de default entre los cuartiles internos, "
         "sensiblemente menor que la dispersión observada entre segmentos, es el "
@@ -899,8 +975,8 @@ def cap12_ecl_lgd_ead(doc):
         "recuperación). En la muestra, 58 exposiciones superan este umbral sin "
         "resolución y reciben el tratamiento de pérdida total. La recuperación "
         "marginal por tramo de workout (Tabla siguiente) decrece y se vuelve "
-        "negativa a partir del cuarto año, respaldando empíricamente —no solo "
-        "regulatoriamente— el corte de 60 meses (Control 7.5, "
+        "negativa a partir del cuarto año, respaldando empíricamente, no solo "
+        "regulatoriamente, el corte de 60 meses (Control 7.5, "
         "IFRS9_COMPLIANCE_SPEC.md).")
     curva_lgd = pd.read_csv(TABLAS_PATH / "lgd_curva_recuperacion.csv")
     _tabla(doc, curva_lgd, _tn(11), "Curva de recuperación por período de workout",
@@ -925,12 +1001,30 @@ def cap12_ecl_lgd_ead(doc):
         "Para facilidades amortizables, la EAD proyectada se construye a partir "
         "del esquema de amortización teórica de un préstamo francés (cuota "
         "constante), corregido por la velocidad de prepago observada:")
-    codigo(doc,
-        "EAD_t = UPB_0 · [(1+i)^n − (1+i)^t] / [(1+i)^n − 1]        (amortización teórica)\n"
-        "SMM_t = (EAD_teórico_t − UPB_observado_t) / EAD_teórico_t\n"
-        "CPR   = 1 − (1 − SMM)^12                                    (prepago anualizado)\n"
-        f"EAD_{{{EAD_HORIZONTE_MESES}m}} = EAD_teórico_{{t+{EAD_HORIZONTE_MESES}}} · (1 − CPR) "
-        "+ Interés_devengado_impago")
+    formula(doc, [
+        ("EAD", True), ("t", False, False, True),
+        (" = ", False), ("UPB", True), ("0", False, False, True),
+        (" · [(1+", False), ("i", True), (")", False), ("n", True, True),
+        (" − (1+", False), ("i", True), (")", False), ("t", True, True),
+        ("] / [(1+", False), ("i", True), (")", False), ("n", True, True),
+        (" − 1]", False),
+        ("   (amortización teórica)", False),
+    ])
+    formula(doc, [
+        ("SMM", True), ("t", False, False, True),
+        (" = (", False), ("EAD", True), ("teórico,t", False, False, True),
+        (" − ", False), ("UPB", True), ("observado,t", False, False, True),
+        (") / ", False), ("EAD", True), ("teórico,t", False, False, True),
+        ("\n",),
+        ("CPR = 1 − (1 − ", False), ("SMM", True), (")", False),
+        ("12", False, True), ("   (prepago anualizado)", False),
+    ])
+    formula(doc, [
+        ("EAD", True), (f"{EAD_HORIZONTE_MESES}m", False, False, True),
+        (" = ", False), ("EAD", True),
+        (f"teórico,t+{EAD_HORIZONTE_MESES}", False, False, True),
+        (" · (1 − CPR) + interés devengado impago", False),
+    ])
     parrafo(doc,
         "con i = tasa nominal anual / 12 y n = plazo original en meses. El "
         "residual entre el saldo teórico y el saldo efectivamente observado "
@@ -945,7 +1039,7 @@ def cap12_ecl_lgd_ead(doc):
     parrafo(doc,
         f"La CPR anual media implícita es de 0,86 %, y la EAD proyectada a "
         f"{EAD_HORIZONTE_MESES} meses representa el 99,6 % del saldo actual medio "
-        "de la cartera viva —una cartera de amortización lenta relativa a su "
+        "de la cartera viva, una cartera de amortización lenta relativa a su "
         "saldo, consistente con tasas de interés de originación bajas en gran "
         "parte del período muestral, que reducen el incentivo económico al "
         "prepago (refinanciamiento).")
@@ -974,8 +1068,8 @@ def cap12_ecl_lgd_ead(doc):
     titulo(doc, "12.3 Gobernanza de Riesgo Cambiario para Facilidades "
                 "Multi-Divisa (Extensión Hipotética)", nivel=2)
     parrafo(doc,
-        "La declaración de perímetro anterior —cartera 100 % denominada y "
-        "liquidada en USD, CARTERA_MULTIDIVISA = False (config.py)— cierra el "
+        "La declaración de perímetro anterior (cartera 100 % denominada y "
+        "liquidada en USD, CARTERA_MULTIDIVISA = False en config.py) cierra el "
         "Control 8.6 para el alcance efectivo de esta tesis. A efectos de "
         "completitud institucional, se formalizan a continuación los controles "
         "que regirían el cálculo de EAD si el alcance de modelado se extendiera "
@@ -986,7 +1080,7 @@ def cap12_ecl_lgd_ead(doc):
         "utilizando el tipo de cambio de fixing oficial diario (publicación H.10 "
         "de la Reserva Federal para cruces con USD, o los tipos de referencia del "
         "BCE para reporte en EUR), aplicado de forma consistente en cada fecha de "
-        "reporte —nunca el tipo histórico de la fecha de la transacción para "
+        "reporte, nunca el tipo histórico de la fecha de la transacción para "
         "fines de ECL.",
         "Descuento a tipo forward para el CCF de líneas revolving: para todo "
         "compromiso revolving fuera de balance en moneda extranjera, la "
@@ -1078,12 +1172,29 @@ def cap13_validacion(doc):
          "un test binomial ", False),
         ("Z", True),
         (" (bajo H0: PD observada = PD predicha) y el intervalo de Wilson al "
-         "95 % sobre la tasa observada —más robusto que el intervalo normal a "
-         "la tasa de evento de esta cartera (≈1,3 %)—:", False),
+         "95 % sobre la tasa observada, más robusto que el intervalo normal a "
+         "la tasa de evento de esta cartera (≈1,3 %):", False),
     ])
-    codigo(doc,
-        "Z = (pd_observada - pd_predicha) / sqrt(pd_predicha·(1-pd_predicha)/n)\n\n"
-        "IC95_Wilson = [ p̂ + z²/2n ± z·sqrt(p̂(1-p̂)/n + z²/4n²) ] / (1 + z²/n),   z = 1,96")
+    formula(doc, [
+        ("Z", True),
+        (" = (", False), ("p̂", True, False, True), ("obs", False, False, True),
+        (" − ", False), ("p̄", True, False, True), ("pred", False, False, True),
+        (") / √(", False), ("p̄", True, False, True), ("pred", False, False, True),
+        ("(1 − ", False), ("p̄", True, False, True), ("pred", False, False, True),
+        (") / ", False), ("n", True), (")", False),
+    ])
+    formula(doc, [
+        ("IC", True), ("95%", False, False, True),
+        (" = [ ", False), ("p̂", True),
+        (" + ", False), ("z", True), ("2", False, True), ("/2", False),
+        ("n", True), (" ± ", False), ("z", True),
+        ("√(", False), ("p̂", True), ("(1 − ", False), ("p̂", True),
+        (") / ", False), ("n", True), (" + ", False), ("z", True),
+        ("2", False, True), ("/4", False), ("n", True), ("2", False, True),
+        (") ] / (1 + ", False), ("z", True), ("2", False, True),
+        ("/", False), ("n", True), (")", False),
+        (",   z = 1,96", False),
+    ])
     ic = pd.read_csv(TABLAS_PATH / "validacion_calibracion_intervalos.csv")
     _tabla(doc, ic, 18,
           "Test Z binomial e intervalo de Wilson al 95 % por decil y modelo (test, vintage 2024)",
@@ -1099,9 +1210,9 @@ def cap13_validacion(doc):
          "rechazan H0 (", False),
         ("p", True),
         (" < 0,05) y muestran la PD predicha fuera del intervalo de Wilson de "
-         "la tasa observada —el mismo efecto de sobre-potencia estadística por "
+         "la tasa observada. Es el mismo efecto de sobre-potencia estadística por "
          "tamaño muestral ya documentado para Hosmer-Lemeshow, no evidencia de "
-         "un problema de calibración distinto—. El hallazgo económicamente "
+         "un problema de calibración distinto. El hallazgo económicamente "
          "relevante es la dirección sistemática del sesgo: en la práctica "
          "totalidad de los deciles, la PD predicha excede a la observada (", False),
         ("z", True),
@@ -1130,8 +1241,8 @@ def cap14_contagio(doc):
         "Dataset corresponde a cartera hipotecaria minorista individual, donde la "
         "unidad de análisis y de originación es la facilidad hipotecaria sobre "
         "una única propiedad. El dataset no identifica al prestatario de forma "
-        "persistente entre operaciones —loan_sequence_number es un identificador "
-        "de facilidad, no de cliente—, por lo que no es posible reconstruir "
+        "persistente entre operaciones: loan_sequence_number es un identificador "
+        "de facilidad, no de cliente, por lo que no es posible reconstruir "
         "empíricamente relaciones de grupo económico o de exposiciones múltiples "
         "de un mismo titular dentro de esta fuente de datos pública (Controles "
         "5.1 y 5.3, IFRS9_COMPLIANCE_SPEC.md).")
@@ -1141,7 +1252,7 @@ def cap14_contagio(doc):
         "datos con identificador de cliente:")
     lista(doc, [
         "Regla de arrastre (pulling effect): si cualquier facilidad de un "
-        "prestatario —o de un codeudor común, dado que number_of_borrowers > 1— "
+        "prestatario, o de un codeudor común dado que number_of_borrowers > 1, "
         "se clasifica en Stage 3, el resto de las exposiciones activas del mismo "
         "titular se reclasifica como mínimo a Stage 2, independientemente de su "
         "propio indicador de mora o de PD individual.",
@@ -1158,8 +1269,8 @@ def cap14_contagio(doc):
         "Esta delimitación de alcance no afecta la validez de las estimaciones "
         "de PD, LGD y EAD presentadas en los Capítulos 9 a 12: al tratarse de "
         "prestatarios con una única facilidad hipotecaria activa en la base "
-        "—supuesto razonable dada la naturaleza minorista e individual de la "
-        "cartera Freddie Mac—, la unidad de análisis facilidad = prestatario "
+        "(supuesto razonable dada la naturaleza minorista e individual de la "
+        "cartera Freddie Mac), la unidad de análisis facilidad = prestatario "
         "coincide en la práctica totalidad de los casos.")
     salto_pagina(doc)
 
@@ -1196,8 +1307,8 @@ def cap15_pma(doc):
     _tabla(doc, gob, _tn(17), "Umbrales de materialidad y niveles de aprobación de PMA")
     parrafo(doc,
         "Metodología de cálculo: todo PMA se cuantifica como un ajuste explícito "
-        "y aditivo sobre el ECL de modelo —nunca como una modificación directa de "
-        "los parámetros PD, LGD o EAD—, de modo que su efecto sea siempre "
+        "y aditivo sobre el ECL de modelo, nunca como una modificación directa de "
+        "los parámetros PD, LGD o EAD, de modo que su efecto sea siempre "
         "identificable y reversible de forma independiente.")
     parrafo(doc,
         f"Vigencia y reversión: un PMA no puede mantenerse vigente por más de "
@@ -1252,27 +1363,39 @@ def cap17_costo_regulacion(doc):
         "17. El Costo de la Regulación: Scorecard WoE vs. Machine Learning sin Restricciones",
         nivel=1)
     parrafo(doc,
-        "Este capítulo compara dos arquitecturas de modelado de PD bajo el mismo "
-        "marco IFRS 9 y la misma partición temporal out-of-time: un scorecard "
-        "regulatorio tradicional basado en Weight of Evidence (WoE) —el enfoque "
-        "canónico de la industria de riesgo de crédito (Siddiqi, 2006; Thomas et "
-        "al., 2017)— y los modelos de Machine Learning sin restricciones de "
-        "discretización desarrollados en los Capítulos 8 y 9. El objetivo es "
-        "cuantificar cuánta capacidad predictiva se sacrifica —o se gana en "
-        "gobernabilidad— al imponer la estructura WoE, y cómo esa diferencia se "
-        "traduce en provisiones de ECL y en la tasa de falsos positivos de la "
-        "migración a Stage 2.")
+        "Este capítulo compara tres arquitecturas de modelado de PD bajo el "
+        "mismo marco IFRS 9 y la misma partición temporal out-of-time: un "
+        "scorecard regulatorio tradicional basado en Weight of Evidence (WoE), "
+        "el enfoque canónico de la industria de riesgo de crédito (Siddiqi, "
+        "2006; Thomas et al., 2017); el modelo de ML disciplinado bajo IFRS 9 "
+        "desarrollado en los Capítulos 8 y 9 (variables continuas y relativas "
+        "a cohorte, con restricciones de monotonía); y un modelo de ML "
+        "entrenado específicamente para este capítulo con libertad total de "
+        "features y sin ninguna restricción regulatoria (Familia C, "
+        "IFRS9_COMPLIANCE_SPEC.md §3.10). El objetivo es cuantificar cuánta "
+        "capacidad predictiva se sacrifica o se gana en gobernabilidad en cada "
+        "nivel de restricción, y cómo esa diferencia se traduce en provisiones "
+        "de ECL y en la tasa de falsos positivos de la migración a Stage 2.")
 
-    titulo(doc, "17.1 Metodología: Binning WoE e Information Value", nivel=2)
+    titulo(doc, "17.1 Metodología: Tres Familias de Modelos", nivel=2)
     parrafo(doc,
         "El Weight of Evidence de un bin se define como el logaritmo del "
         "cociente entre la proporción de no-defaulters y de defaulters que caen "
         "en ese bin, y el Information Value (IV) de una variable como la suma, "
         "sobre todos sus bins, del producto entre esa diferencia de proporciones "
         "y su WoE:")
-    codigo(doc,
-        "WoE_bin = ln( %no-default en el bin / %default en el bin )\n"
-        "IV      = Σ_bin (%no-default - %default) · WoE_bin")
+    formula(doc, [
+        ("WoE", True), ("bin", False, False, True),
+        (" = ln(", False),
+        ("%no-default", False, False, True), ("/", False),
+        ("%default", False, False, True), (" en el bin)", False),
+    ])
+    formula(doc, [
+        ("IV", True), (" = Σ", False), ("bin", False, False, True),
+        (" (", False), ("%no-default", False, False, True),
+        (" − ", False), ("%default", False, False, True),
+        (") · ", False), ("WoE", True), ("bin", False, False, True),
+    ])
     parrafo(doc,
         "Las variables continuas se discretizan en 10 bins por cuantiles "
         "ajustados exclusivamente sobre el conjunto de entrenamiento; las "
@@ -1280,12 +1403,23 @@ def cap17_costo_regulacion(doc):
         "suavizado de Laplace para evitar log(0) en bins con cero defaults, dada "
         "la baja tasa de eventos de la cartera (≈1,3 %). Sobre la matriz "
         "transformada se entrenan Regresión Logística, XGBoost y Random Forest "
-        "(familia WoE); ambos algoritmos de árboles se restringen a "
+        "(Familia A, WoE); ambos algoritmos de árboles se restringen a "
         "profundidades moderadas dado que la estructura WoE ya impone "
-        "monotonía por diseño. La familia de ML sin restricciones reutiliza los "
-        "modelos XGBoost y Random Forest del Capítulo 9, entrenados "
-        "directamente sobre variables continuas y relativas a cohorte, "
-        "calibrados isotónicamente.")
+        "monotonía por diseño.")
+    parrafo(doc,
+        "La Familia B (ML disciplinado IFRS 9) reutiliza los modelos XGBoost "
+        "y Random Forest del Capítulo 9 tal cual, entrenados sobre variables "
+        "continuas y relativas a cohorte, con restricciones de monotonía "
+        "(Sección 9.1) y calibrados isotónicamente. La Familia C (ML sin "
+        "restricciones) se entrena específicamente para este capítulo con "
+        "libertad total de features: incorpora también las variables de nivel "
+        "absoluto excluidas del modelo campeón por desplazamiento de "
+        "covariables (original_interest_rate, current_interest_rate, "
+        "original_upb, current_actual_upb; Sección 8.1), sin restricción de "
+        "monotonía y con manejo de desbalance vía scale_pos_weight, "
+        "recalibrado isotónicamente después. Es la versión más potente que "
+        "construiría un equipo de ciencia de datos sin ningún condicionamiento "
+        "regulatorio.")
     iv = pd.read_csv(TABLAS_PATH / "woe_bins_iv.csv")
     _tabla(doc, iv, _tn(19), "Information Value por variable (scorecard WoE)",
           callout=f"La Tabla {_tn(19)} presenta el Information Value de cada variable "
@@ -1304,17 +1438,36 @@ def cap17_costo_regulacion(doc):
     titulo(doc, "17.2 Discriminación y Calibración Comparadas", nivel=2)
     cmp = pd.read_csv(TABLAS_PATH / "comparacion_woe_vs_raw_metricas.csv")
     _tabla(doc, cmp, _tn(20),
-          "Discriminación y calibración: scorecard WoE vs. ML sin restricciones (test 2024)",
-          callout=f"La Tabla {_tn(20)} compara la discriminación y calibración de ambas familias de modelos.")
+          "Discriminación y calibración: WoE vs. ML disciplinado IFRS 9 vs. ML sin restricciones (test 2024)",
+          callout=f"La Tabla {_tn(20)} compara la discriminación y calibración de las tres familias de modelos.")
     parrafo(doc,
-        "La familia de ML sin restricciones domina en discriminación pura: el "
-        "AUC de XGBoost y Random Forest (Raw, calibrados) se ubica entre 0,854 y "
-        "0,856, frente a 0,782-0,792 de los tres modelos WoE —una brecha de Gini "
-        "de aproximadamente 13 a 15 puntos—, consistente con la pérdida de "
-        "información inherente a la discretización en bins. El Brier Score es "
-        "levemente inferior (mejor) en la familia Raw (0,0028 vs. 0,0030-0,0031).")
+        "El resultado no es el esperable de forma ingenua. El Gini de la "
+        "Familia B (ML disciplinado IFRS 9) es el más alto de las tres "
+        "familias (0,7080 XGBoost, 0,7121 Random Forest), superando tanto a "
+        "la Familia A (WoE, 0,5637-0,5834) como a la Familia C (ML sin "
+        "restricciones, 0,6188 Random Forest, 0,6714 XGBoost). Es decir: la "
+        "libertad total de features no mejora la discriminación out-of-time "
+        "respecto del modelo disciplinado; la empeora, en 3,7 puntos de Gini "
+        "para XGBoost y en 9,3 puntos para Random Forest. La causa es la "
+        "misma que motivó la Sección 8.1: al incorporar de nuevo las "
+        "variables de nivel absoluto, la Familia C reintroduce el "
+        "desplazamiento de covariables entre entrenamiento (2016-2020) y test "
+        "(2024) que el modelo campeón corrige deliberadamente. La disciplina "
+        "de estabilidad temporal que exige un modelo de PD bajo IFRS 9 no es, "
+        "en este caso, un costo regulatorio: es una mejora genuina de la "
+        "robustez fuera de muestra frente a un enfoque sin ninguna restricción.")
+    parrafo(doc,
+        "El único costo de discriminación inequívoco que persiste es el de la "
+        "discretización WoE en sí: incluso la Familia C, con su desempeño "
+        "reducido por el desplazamiento de covariables, sigue superando a las "
+        "tres variantes WoE en Gini (0,6188 contra un máximo de 0,5834). La "
+        "brecha entre la Familia A y la Familia B, la comparación "
+        "metodológicamente más limpia dado que ambas comparten el mismo "
+        "conjunto de features estable, es de 12,5 a 14,8 puntos de Gini. El "
+        "Brier Score es uniformemente 0,0028 en las Familias B y C frente a "
+        "0,0030-0,0031 en la Familia A.")
     figura(doc, FIGURAS_PATH / "woe_vs_raw_roc.png", 15,
-          "Curva ROC – scorecard WoE vs. ML sin restricciones (test 2024).")
+          "Curva ROC: scorecard WoE vs. ML disciplinado IFRS 9 vs. ML sin restricciones (test 2024).")
 
     titulo(doc, "17.3 Migración a Stage 2 y Provisión de ECL", nivel=2)
     parrafo(doc,
@@ -1336,41 +1489,62 @@ def cap17_costo_regulacion(doc):
           callout=f"La Tabla {_tn(22)} presenta la provisión de ECL resultante bajo la "
                   "clasificación de stage propia de cada modelo.")
     parrafo(doc,
-        "Los scorecards WoE —en particular XGBoost y Random Forest entrenados "
-        "sobre variables WoE— migran una proporción sensiblemente mayor de la "
-        "cartera a Stage 2 (15,75 % y 19,63 %, respectivamente) que los modelos "
-        "de ML sin restricciones (12,21 % y 9,46 %), pero con una tasa de "
-        "default observada *menor* dentro de ese Stage 2 (0,90 % y 0,83 % "
-        "frente a 1,11 % y 1,40 %): es decir, generan una proporción "
-        "sensiblemente mayor de falsos positivos de SICR. Esto se traduce "
-        "directamente en una provisión de ECL agregada más alta: el scorecard "
-        "Random Forest-WoE provisiona 163,5 puntos básicos sobre EAD, 2,02 veces "
-        "más que el scorecard Logístico-WoE (80,8 pb) para un riesgo real "
-        "subyacente esencialmente idéntico —la tasa de default global observada "
-        "en test es la misma para todos los modelos por construcción "
-        "(0,3007 %).")
+        "Los scorecards WoE, en particular XGBoost y Random Forest entrenados "
+        "sobre variables WoE, migran una proporción sensiblemente mayor de la "
+        "cartera a Stage 2 (15,75 % y 19,63 %) que la Familia B (12,21 % y "
+        "9,46 %), con una tasa de default observada menor dentro de ese Stage "
+        "2 (0,90 % y 0,83 % frente a 1,11 % y 1,40 %): generan una proporción "
+        "sensiblemente mayor de falsos positivos de SICR y, en consecuencia, "
+        "una provisión de ECL más alta (146,0 y 163,5 puntos básicos sobre "
+        "EAD).")
+    parrafo(doc,
+        "La Familia C introduce un resultado adicional que merece lectura "
+        "cuidadosa: es la que menos migra a Stage 2 (4,05 % XGBoost, 7,49 % "
+        "Random Forest) y, por lo tanto, la de menor provisión de ECL de las "
+        "siete combinaciones (59,5 y 67,6 pb; XGB_ML_Libre es el nuevo mínimo "
+        "de la tabla). Esto no debe leerse como que la Familia C sea la más "
+        "eficiente en capital: es también la de peor discriminación entre los "
+        "modelos de árboles (Sección 17.2), y su versión XGBoost detuvo el "
+        "entrenamiento en apenas 7 árboles por early stopping (AUC de "
+        "validación 0,8402), un ajuste inusualmente rápido asociado al uso de "
+        "scale_pos_weight que probablemente comprime la diferencia entre la "
+        "PD de originación y la PD corriente que alimenta el criterio de "
+        "SICR. Una provisión más baja combinada con peor discriminación es "
+        "compatible con sub-provisión, no con eficiencia genuina: no hay en "
+        "estos resultados evidencia de que la Familia C sea preferible a la "
+        "Familia B en ningún eje relevante para IFRS 9. La tasa de default "
+        "global observada en test es la misma para las siete combinaciones "
+        "por construcción (0,3007 %), por lo que las diferencias de provisión "
+        "son enteramente atribuibles a la arquitectura de modelado.")
     figura(doc, FIGURAS_PATH / "woe_vs_raw_ecl_provisiones.png", 16,
           "Provisión de ECL de cartera y tasa de migración a Stage 2 por modelo.")
 
     titulo(doc, "17.4 Discusión: El Costo de la Regulación", nivel=2)
     parrafo(doc,
-        "Los resultados cuantifican el trade-off entre gobernabilidad y "
-        "eficiencia de capital que subyace a la elección entre un scorecard "
-        "regulatorio tradicional y un modelo de ML sin restricciones. El "
-        "scorecard WoE ofrece ventajas de gobernanza difíciles de replicar con "
-        "modelos de árboles sin discretizar —monotonía garantizada por "
-        "construcción, coeficientes de la Regresión Logística directamente "
-        "interpretables como contribución marginal al log-odds, e Information "
-        "Value como métrica estándar de la industria para justificar la "
-        "inclusión de cada variable ante el supervisor—, pero a un costo "
-        "concreto y medible: una pérdida de discriminación de 13 a 15 puntos de "
-        "Gini y una sobre-provisión de hasta 2,02× frente al modelo de ML mejor "
-        "calibrado, para el mismo riesgo real subyacente. Dado que el modelo "
-        "XGBoost sobre variables raw se calibra isotónicamente y conserva "
-        "restricciones de monotonía sobre sus drivers de riesgo (Sección 9.1), "
-        "gran parte de la ventaja de gobernanza del scorecard WoE se preserva "
-        "sin incurrir en el costo de discretización, sugiriendo que la brecha "
-        "cuantificada en este capítulo es, en gran medida, evitable.")
+        "Los resultados de este capítulo matizan la pregunta de investigación "
+        "de partida. El costo de regulación que se confirma sin ambigüedad es "
+        "el de la discretización WoE: 12,5 a 14,8 puntos de Gini y una "
+        "sobre-provisión de hasta 2,7 veces frente al modelo mejor calibrado, "
+        "para el mismo riesgo real subyacente, con la ventaja de gobernanza "
+        "conocida a cambio (monotonía garantizada por construcción, "
+        "coeficientes interpretables como contribución marginal al log-odds, "
+        "Information Value como métrica estándar de la industria ante el "
+        "supervisor).")
+    parrafo(doc,
+        "El costo que no se confirma es el de las restricciones "
+        "metodológicas del propio modelo campeón (monotonía, features "
+        "relativas a cohorte). Comparado contra un ML genuinamente sin "
+        "restricciones, el modelo disciplinado bajo IFRS 9 no solo preserva "
+        "su ventaja de gobernanza: también discrimina mejor fuera de muestra. "
+        "La razón práctica es que la disciplina de estabilidad temporal "
+        "exigida para que una PD sea utilizable en producción bajo IFRS 9 "
+        "coincide, en esta cartera, con buenas prácticas de generalización "
+        "que un enfoque sin restricciones no tiene ningún incentivo interno "
+        "para adoptar. En consecuencia, la brecha de discriminación "
+        "cuantificada frente al scorecard WoE es, en gran medida, evitable "
+        "adoptando un modelo de árboles calibrado y monotónico como el del "
+        "Capítulo 9, sin necesidad de sacrificar disciplina metodológica a "
+        "cambio de más potencia nominal.")
     salto_pagina(doc)
 
 
@@ -1419,11 +1593,18 @@ def cap18_conclusiones(doc):
         "Se formalizaron las políticas de contagio de riesgo entre exposiciones "
         "de un mismo prestatario y de gobernanza de overrides y Post-Model "
         "Adjustments, ausentes en la versión previa del modelo.",
-        "Se cuantificó el costo de la regulación: un scorecard WoE tradicional "
-        "sacrifica entre 13 y 15 puntos de Gini frente a un modelo de ML "
-        "calibrado y monotónico, y puede sobre-provisionar el ECL de cartera "
-        "hasta 2,02× para el mismo riesgo real subyacente, por una tasa "
-        "sensiblemente mayor de falsos positivos en la migración a Stage 2.",
+        "Se cuantificó el costo de la regulación comparando tres arquitecturas "
+        "bajo idéntica partición temporal: un scorecard WoE tradicional "
+        "sacrifica entre 12,5 y 14,8 puntos de Gini frente al modelo de ML "
+        "calibrado y monotónico del Capítulo 9, y puede sobre-provisionar el "
+        "ECL de cartera hasta 2,7 veces para el mismo riesgo real subyacente, "
+        "por una tasa sensiblemente mayor de falsos positivos en la migración "
+        "a Stage 2. Un tercer modelo de ML entrenado sin ninguna restricción "
+        "regulatoria (features de nivel absoluto incluidas, sin monotonía) no "
+        "logró superar al modelo disciplinado en discriminación out-of-time, "
+        "confirmando que la disciplina de estabilidad temporal que exige "
+        "IFRS 9 no es, en esta cartera, un costo regulatorio sino una mejora "
+        "de robustez fuera de muestra.",
     ])
 
     titulo(doc, "18.2 Líneas Futuras", nivel=2)
@@ -1446,7 +1627,7 @@ def cap18_conclusiones(doc):
         "Reducir la granularidad del binning WoE del credit_score (IV "
         "actualmente en rango \"sospechoso\") antes de cualquier despliegue "
         "productivo del scorecard regulatorio del Capítulo 17.",
-        "Aplicar la metodología completa —PD, LGD, EAD y gobernanza— a datos de "
+        "Aplicar la metodología completa (PD, LGD, EAD y gobernanza) a datos de "
         "entidades financieras argentinas bajo BCRA/NIIF 9 (Banco Central de la "
         "República Argentina, 2024).",
     ])
