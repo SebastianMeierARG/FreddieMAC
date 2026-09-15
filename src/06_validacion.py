@@ -44,6 +44,7 @@ _sys.path.insert(0, str(_os.path.dirname(__file__)))
 from importlib import import_module as _im
 _p04 = _im("04_modelado")
 ModeloCalibraado = _p04.ModeloCalibraado  # noqa: F401
+_sys.modules["m04"] = _p04  # compat: algunos .joblib fueron pickled desde el notebook bajo ese alias
 
 warnings.filterwarnings("ignore")
 plt.rcParams.update({"font.family": "serif", "font.size": 11})
@@ -106,6 +107,42 @@ def backtesting_deciles(y_true, y_prob, nombre: str) -> pd.DataFrame:
     tabla["diferencia"] = tabla["pd_predicha"] - tabla["pd_observada"]
     tabla["modelo"] = nombre
     return tabla
+
+
+def intervalos_calibracion(df_backtesting: pd.DataFrame, z: float = 1.96) -> pd.DataFrame:
+    """
+    Complemento al backtesting por decil (Control 6.5): dado que Hosmer-Lemeshow
+    pierde potencia discriminante a N > 400.000 (rechaza calibración perfecta por
+    pura potencia estadística, no por desvío económicamente relevante), se agrega
+    por decil un test binomial Z (H0: pd_observada == pd_predicha) y el intervalo
+    de Wilson al 95% sobre la tasa observada, más robusto que el intervalo normal
+    a tasas de evento bajas (~1.3% de la cartera).
+    """
+    from scipy.stats import norm
+
+    df = df_backtesting.copy()
+    p_pred = df["pd_predicha"]
+    n = df["n"]
+
+    se = np.sqrt(p_pred * (1 - p_pred) / n)
+    df["z_stat"] = (df["pd_observada"] - p_pred) / se
+    df["p_valor_z"] = 2 * (1 - norm.cdf(df["z_stat"].abs()))
+
+    p_hat = df["pd_observada"]
+    denom = 1 + z**2 / n
+    centro = (p_hat + z**2 / (2 * n)) / denom
+    margen = (z * np.sqrt(p_hat * (1 - p_hat) / n + z**2 / (4 * n**2))) / denom
+    df["wilson_ic95_inferior"] = centro - margen
+    df["wilson_ic95_superior"] = centro + margen
+    df["pd_predicha_dentro_ic95"] = (p_pred >= df["wilson_ic95_inferior"]) & (
+        p_pred <= df["wilson_ic95_superior"]
+    )
+
+    return df[[
+        "modelo", "decil", "n", "defaults", "pd_predicha", "pd_observada",
+        "z_stat", "p_valor_z", "wilson_ic95_inferior", "wilson_ic95_superior",
+        "pd_predicha_dentro_ic95",
+    ]]
 
 
 def hosmer_lemeshow(y_true, y_prob, n_grupos: int = 10) -> tuple:
@@ -469,6 +506,13 @@ def main():
     df_bt_all = pd.concat(df_backtesting, ignore_index=True)
     ruta_bt = TABLAS_PATH / "validacion_backtesting.csv"
     df_bt_all.to_csv(ruta_bt, index=False)
+
+    # Control 6.5: test binomial Z + intervalos de Wilson por decil (complemento
+    # a Hosmer-Lemeshow, que pierde potencia discriminante a N > 400.000)
+    df_ic = intervalos_calibracion(df_bt_all)
+    ruta_ic = TABLAS_PATH / "validacion_calibracion_intervalos.csv"
+    df_ic.to_csv(ruta_ic, index=False)
+    print(f"  Intervalos de calibración (Wilson 95%) guardados: {ruta_ic}")
 
     # Gráficos
     graficar_curva_roc(resultados_roc)
